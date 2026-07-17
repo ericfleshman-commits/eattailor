@@ -1,0 +1,850 @@
+:root{
+  --bg:#1c1c1c;
+  --panel:#2c2c2c;
+  --muted:#9a9a9a;
+  --text:#ffffff;
+  --accent:#198f51;
+  --bubble:#2c2c2c;
+  --bubble-self:#065b32;
+  --radius:14px;
+  /* Macro colors from Figma */
+  --color-calories:#198f51;
+  --color-protein:#198f51;
+  --color-carbs:#4df7ab;
+  --color-fat:#ff6b00;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif;
+  color:var(--text);
+  background:linear-gradient(180deg,#1c1c1c, #242424 40%);
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+.app{
+  width:100%;
+  max-width:100%;
+  height:100dvh;
+  margin:0;
+  padding:0;
+  display:flex;
+  flex-direction:column;
+  gap:0;
+}
+
+.app__body{
+  display:flex;
+  gap:0;
+  align-items:stretch;
+  flex:1;
+  min-height:0;
+}
+
+.sidebar{
+  position:relative;
+  flex:0 0 320px;
+  width:320px;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+  padding:20px;
+  padding-top:20px;
+  background:var(--bg);
+  border-right:1px solid #2a2a2a;
+  overflow-y:auto;
+  transition:transform 0.3s ease, margin-left 0.3s ease;
+}
+body.sidebar-loading .sidebar{
+  transition:none !important;
+}
+body.sidebar-hidden .sidebar{
+  transform:translateX(-100%);
+  margin-left:-320px;
+}
+
+.main{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  min-width:0;
+  padding:16px;
+}
+
+.app__header{
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  gap:16px;
+  padding:12px 16px;
+  background:var(--panel);
+  border-bottom:1px solid #2a2a2a;
+}
+
+.chat{
+  background:var(--panel);
+  border:1px solid #2a2a2a;
+  border-radius:var(--radius);
+  overflow:hidden;
+  display:flex;
+  flex:1;
+}
+
+.chat__messages{
+  list-style:none;
+  margin:0;
+  padding:16px;
+  width:100%;
+  overflow:auto;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  scroll-behavior:smooth;
+}
+
+.message{
+  max-width:min(78%, 640px);
+  padding:10px 12px;
+  border-radius:12px;
+  background:var(--bubble);
+  border:1px solid #333;
+  white-space:pre-wrap;
+  word-wrap:break-word;
+  animation:slideIn 0.3s ease-out forwards;
+}
+
+@keyframes slideIn{
+  from{
+    opacity:0;
+    transform:translateY(10px);
+  }
+  to{
+    opacity:1;
+    transform:translateY(0);
+  }
+}
+.message strong{
+  font-weight:700;
+  color:var(--text);
+}
+.message--self{
+  margin-left:auto;
+  background:linear-gradient(135deg, #0a3d24 0%, #065b32 100%);
+  border:1px solid rgba(6, 91, 50, 0.4);
+  animation:slideInRight 0.3s ease-out forwards;
+}
+
+@keyframes slideInRight{
+  from{
+    opacity:0;
+    transform:translateX(20px);
+  }
+  to{
+    opacity:1;
+    transform:translateX(0);
+  }
+}
+.message__meta{
+  margin-top:6px;
+  font-size:12px;
+  color:var(--muted);
+  display:flex;
+  gap:8px;
+}
+
+.composer{
+  display:flex;
+  gap:10px;
+  align-items:end;
+  background:var(--panel);
+  border:1px solid #2a2a2a;
+  border-radius:var(--radius);
+  padding:10px;
+}
+.composer__input{
+  flex:1;
+  resize:none;
+  min-height:40px;
+  max-height:160px;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid #333;
+  background:#0f0f0f;
+  color:var(--text);
+  outline:none;
+}
+.composer__input:focus{border-color:var(--accent)}
+
+.btn{
+  border:none;
+  background:linear-gradient(135deg, #198f51 0%, #127a42 100%);
+  color:#ffffff;
+  padding:10px 14px;
+  border-radius:10px;
+  font-weight:700;
+  cursor:pointer;
+  box-shadow:0 2px 8px rgba(25, 143, 81, 0.3);
+  transition:all 0.2s ease;
+}
+.btn:hover{filter:brightness(1.05)}
+.btn:active{transform:translateY(1px)}
+.btn--ghost{
+  background:transparent;
+  color:var(--muted);
+  border:1px solid #333;
+  box-shadow:none;
+}
+
+.app__footer{
+  color:var(--muted);
+  text-align:center;
+  font-size:12px;
+}
+
+.macro-section{
+  background:var(--panel);
+  border:1px solid #2a2a2a;
+  border-radius:var(--radius);
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.macro-section__title{
+  font-size:13px;
+  color:var(--text);
+  text-transform:uppercase;
+  letter-spacing:1px;
+  margin:0 0 8px 0;
+  font-weight:700;
+}
+.macro-row{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.macro-row__header{
+  display:flex;
+  justify-content:space-between;
+  font-size:13px;
+}
+.macro-row__label{
+  color:var(--text);
+  font-weight:500;
+}
+.macro-row__value{
+  color:var(--muted);
+  font-size:12px;
+}
+.macro-bar{
+  height:8px;
+  background:#2a2a2a;
+  border-radius:4px;
+  overflow:hidden;
+}
+.macro-fill{
+  height:100%;
+  width:0;
+  background:var(--accent);
+  transition:width 0.3s ease;
+}
+.macro-fill--calories{
+  background:var(--color-calories);
+}
+.macro-fill--protein{
+  background:var(--color-protein);
+}
+.macro-fill--carbs{
+  background:var(--color-carbs);
+}
+.macro-fill--fat{
+  background:var(--color-fat);
+}
+
+.daily-goals{
+  margin-top:8px;
+  border-top:1px solid #333;
+  padding-top:8px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.daily-goals__title{
+  font-size:12px;
+  color:var(--muted);
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+}
+.daily-goals__row{
+  display:flex;
+  justify-content:space-between;
+  font-size:12px;
+  color:var(--muted);
+}
+.daily-goals__label{
+  opacity:0.9;
+}
+.daily-goals__value{
+  font-weight:500;
+  color:var(--text);
+}
+
+.sr-only{
+  position:absolute;
+  width:1px;height:1px;
+  padding:0;margin:-1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;border:0;
+}
+
+/* ===========================
+   MOBILE RESPONSIVE LAYOUT
+=========================== */
+
+/* Hide hamburger menu when onboarding is active */
+body.onboarding-active .mobile-menu-btn {
+  display: none !important;
+}
+
+/* Ensure onboarding appears above everything on iOS */
+body.is-ios .onboarding-overlay {
+  z-index: 2147483647 !important; /* Max z-index, same as iOS sidebar */
+}
+
+/* Hide sidebar when onboarding is active on iOS */
+body.is-ios.onboarding-active .sidebar {
+  display: none !important;
+}
+
+/* Ensure onboarding is scrollable and clickable on iOS */
+body.is-ios .onboarding-overlay {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  pointer-events: auto !important;
+}
+
+body.is-ios .onboarding-container {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  pointer-events: auto !important;
+}
+
+/* Ensure onboarding buttons and cards are clickable on iOS */
+body.is-ios .onboarding-overlay .btn,
+body.is-ios .onboarding-preset {
+  position: relative !important;
+  z-index: auto !important;
+  pointer-events: auto !important;
+  -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important;
+  touch-action: manipulation !important;
+  cursor: pointer !important;
+}
+
+/* Remove body scroll lock on iOS when onboarding active */
+body.is-ios.onboarding-active {
+  overflow: auto !important;
+  position: static !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+@media (max-width: 768px) {
+  /* Mobile sidebar - NUCLEAR SIMPLE VERSION */
+  .sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    flex: none !important;
+    z-index: 999999 !important;
+    background: #1c1c1c !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    transform: translateX(-100%) !important;
+    transition: transform 0.3s ease !important;
+    margin: 0 !important;
+    border: none !important;
+  }
+
+  .sidebar--open {
+    transform: translateX(0) !important;
+  }
+
+  /* Make all children visible */
+  .sidebar--open > * {
+    visibility: visible !important;
+    opacity: 1 !important;
+    display: block !important;
+  }
+
+  .sidebar--open .mobile-sidebar-header {
+    display: flex !important;
+  }
+
+  /* Mobile Sidebar Header - matches hamburger button position exactly */
+  .mobile-sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 76px; /* 16px top (match hamburger) + 44px button + 16px bottom */
+    min-height: 76px;
+    max-height: 76px;
+    padding: 16px; /* Match hamburger button top offset */
+    background: var(--panel);
+    border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+  }
+
+  .mobile-sidebar-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px; /* Match button height */
+  }
+
+  .mobile-sidebar-logo__icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .mobile-sidebar-logo__text {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.5px;
+  }
+
+  .mobile-sidebar-close {
+    background: var(--panel);
+    border: 1px solid #2a2a2a;
+    color: var(--text);
+    font-size: 24px;
+    font-weight: 300;
+    width: 44px; /* Match hamburger button */
+    height: 44px; /* Match hamburger button */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.2s ease;
+    line-height: 1;
+  }
+
+  .mobile-sidebar-close:active {
+    background: #2a2a2a;
+    transform: scale(0.95);
+  }
+
+  /* Chat takes full width */
+  .chat-container {
+    width: 100% !important;
+    flex: 1;
+  }
+
+  /* Settings modal full screen on mobile */
+  .settings-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Fix textarea height on mobile */
+  .chat__form textarea {
+    min-height: 44px !important;
+    max-height: 120px !important;
+    font-size: 16px !important; /* Prevents zoom on iOS */
+  }
+
+  /* Sticky input at bottom with safe area */
+  .chat__form {
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+    background: var(--bg);
+  }
+
+  /* Better modal backdrop */
+  .modal {
+    padding: 0;
+  }
+
+  /* Prevent body scroll when modal open */
+  body.modal-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+
+  /* Add mobile hamburger menu button */
+  .mobile-menu-btn {
+    display: flex !important;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 2147483646; /* Just below sidebar so it doesn't overlap */
+    width: 44px;
+    height: 44px;
+    background: var(--panel);
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    color: var(--text);
+    pointer-events: auto !important;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+  }
+
+  /* Hide hamburger when sidebar is open */
+  .mobile-menu-btn--hidden {
+    display: none !important;
+  }
+
+  /* Hide hamburger when settings modal is open */
+  .settings-modal[style*="display: flex"] ~ .mobile-menu-btn,
+  .settings-modal[style*="display:flex"] ~ .mobile-menu-btn {
+    display: none !important;
+  }
+
+  /* Mobile backdrop for sidebar */
+  .mobile-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 10000 !important;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: all;
+  }
+
+  .mobile-backdrop--visible {
+    display: block !important;
+    opacity: 1 !important;
+  }
+
+  /* ANDROID CHROME: Base bottom padding (JS adjusts dynamically for keyboard) */
+  .chat__messages {
+    padding: 60px 16px 70px 16px; /* 70px = composer height */
+  }
+
+  /* Keep sidebar footer visible in the sidebar on mobile */
+  .sidebar-footer {
+    display: flex !important;
+  }
+
+  /* Hide app footer on mobile - composer is fixed at bottom */
+  .app__footer {
+    display: none !important;
+  }
+
+  /* Mobile composer - clean bottom bar with just input and send */
+  .composer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    margin: 0;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding: 12px 16px;
+    gap: 12px;
+    z-index: 100;
+    background: var(--panel);
+  }
+
+  .composer__input {
+    flex: 1;
+    min-height: 44px;
+    max-height: 120px;
+    padding: 12px 14px;
+  }
+
+  .composer .btn {
+    min-height: 44px;
+    padding: 0 20px;
+    flex-shrink: 0;
+  }
+
+  /* Make buttons more touch-friendly */
+  button {
+    min-height: 44px;
+  }
+
+
+  /* iOS backdrop - hide it completely since sidebar is fullscreen */
+  body.is-ios .mobile-backdrop--visible {
+    display: none !important;
+  }
+
+  /* Hide main chat container when sidebar is open on iOS */
+  body.is-ios.modal-open .main {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Hide hamburger menu when sidebar open on iOS */
+  body.is-ios.modal-open .mobile-menu-btn {
+    display: none !important;
+  }
+
+  /* Prevent body scroll when iOS sidebar is open (but NOT during onboarding) */
+  body.is-ios.modal-open:not(.onboarding-active) {
+    overflow: hidden !important;
+    position: fixed !important;
+    width: 100% !important;
+    height: 100vh !important;
+  }
+}
+
+/* Desktop: hide mobile menu and sidebar header */
+@media (min-width: 769px) {
+  .mobile-menu-btn,
+  .mobile-backdrop,
+  .mobile-sidebar-header {
+    display: none !important;
+  }
+}
+
+/* ===========================
+   iOS SPECIFIC FIXES
+=========================== */
+
+/* Prevent iOS overscroll bounce - iOS ONLY */
+@supports (-webkit-touch-callout: none) {
+  body.is-ios html {
+    position: fixed;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+  }
+
+  body.is-ios {
+    position: fixed;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.is-ios .app {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Only allow scrolling in chat messages - iOS ONLY */
+  body.is-ios .chat__messages {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+
+  /* iOS: Fix backdrop rendering */
+  body.is-ios .mobile-backdrop {
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+
+  /* iOS safe area support */
+  :root {
+    --safe-area-top: env(safe-area-inset-top);
+    --safe-area-bottom: env(safe-area-inset-bottom);
+  }
+
+  .mobile-menu-btn {
+    top: calc(16px + env(safe-area-inset-top));
+  }
+
+  .chat__form {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .chat__messages {
+    padding-top: calc(60px + env(safe-area-inset-top));
+    height: calc(100vh - env(safe-area-inset-bottom));
+  }
+}
+
+/* Mobile settings modal - ensure it's on top ONLY when active */
+@media (max-width: 768px) {
+  /* Modal is hidden by default */
+  .settings-modal,
+  .modal {
+    display: none;
+  }
+
+  /* Only show when display is set to flex via JS */
+  .settings-modal[style*="display: flex"],
+  .settings-modal[style*="display:flex"],
+  .modal[style*="display: flex"],
+  .modal[style*="display:flex"] {
+    display: flex !important;
+    z-index: 10000 !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    align-items: stretch !important;
+    padding: 0 !important;
+  }
+
+  /* Ensure modal content is visible when modal is shown */
+  .settings-modal[style*="display: flex"] .modal__content,
+  .modal[style*="display: flex"] .modal__content {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100vh !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    background: var(--bg) !important;
+    box-sizing: border-box !important;
+    padding: 16px !important;
+  }
+
+  /* Ensure all settings content fits within screen width */
+  .settings-modal input,
+  .settings-modal select,
+  .settings-modal .form-group {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Android Chrome address bar handling */
+  .chat__messages {
+    /* Use dvh (dynamic viewport height) if supported, fallback to vh */
+    height: calc(100dvh - 200px);
+    height: calc(var(--vh, 1vh) * 100 - 200px);
+  }
+}
+
+/* Brave/Chrome Android specific */
+@supports (-webkit-appearance: none) {
+  .chat__form {
+    position: sticky;
+    bottom: 0;
+  }
+}
+
+/* Ensure settings button is always clickable on mobile */
+@media (max-width: 768px) {
+  #settingsBtn {
+    z-index: 9999 !important;
+    pointer-events: auto !important;
+    -webkit-tap-highlight-color: transparent !important;
+    touch-action: manipulation !important;
+  }
+}
+
+/* Activity list for multiple workouts */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.activity-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.activity-item__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.activity-item__stats {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ===========================
+   iOS MODERN VIEWPORT FIX
+   Uses dvh units and proper keyboard handling
+   Only applies to iOS (body.is-ios class added via JS)
+=========================== */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 768px) {
+    /* Use dynamic viewport height that adjusts for keyboard - iOS ONLY */
+    body.is-ios html,
+    body.is-ios {
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    body.is-ios .app {
+      height: 100dvh;
+    }
+
+    body.is-ios .chat {
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Messages container uses remaining space - iOS ONLY */
+    body.is-ios .chat__messages {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      padding: 60px 16px 20px 16px !important;
+    }
+
+    /* Input stays fixed at bottom with safe area - iOS ONLY */
+    body.is-ios .composer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--panel);
+      padding: 12px 16px;
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+      z-index: 100;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* Prevent body scroll when typing - iOS ONLY */
+    body.is-ios.keyboard-open {
+      position: fixed;
+      width: 100%;
+    }
+  }
+}

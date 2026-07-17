@@ -1,0 +1,1897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+  <title>EatTailor - AI Nutrition Coach</title>
+  <meta name="description" content="Conversational nutrition tracking with AI. Track your macros by chatting with an AI assistant.">
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#4da3ff">
+
+  <!-- Mobile web app meta tags -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="EatTailor">
+
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Activity Stats Card */
+    .activity-card{
+      background:var(--panel);
+      border:1px solid #1e2431;
+      border-radius:var(--radius);
+      padding:20px;
+    }
+    .activity-card__header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:12px;
+    }
+    .activity-card__title{
+      font-size:13px;
+      color:var(--muted);
+      text-transform:uppercase;
+      letter-spacing:0.8px;
+      font-weight:600;
+    }
+    .activity-card__streak{
+      font-size:12px;
+      color:#ffa500;
+      font-weight:600;
+      letter-spacing:0.3px;
+    }
+    .activity-card__separator{
+      height:1px;
+      background:#1e2431;
+      margin:12px 0;
+    }
+    .activity-card__content{
+      min-height:80px;
+    }
+    .activity-card__source{
+      font-size:10px;
+      color:var(--muted);
+      text-align:center;
+      opacity:0.7;
+    }
+    .activity-stat{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:6px 0;
+    }
+    .activity-stat__label{
+      font-size:13px;
+      color:var(--muted);
+    }
+    .activity-stat__value{
+      font-size:14px;
+      color:var(--text);
+      font-weight:500;
+    }
+    .activity-rest{
+      text-align:center;
+      padding:20px 0;
+    }
+    .activity-rest__title{
+      font-size:18px;
+      color:var(--text);
+      font-weight:600;
+      margin-bottom:12px;
+    }
+    .activity-rest__stats{
+      font-size:13px;
+      color:var(--muted);
+      margin-bottom:12px;
+    }
+    .activity-rest__message{
+      font-size:12px;
+      color:var(--accent);
+      font-style:italic;
+    }
+    .activity-connect{
+      text-align:center;
+      padding:20px 0;
+    }
+    .activity-connect__message{
+      font-size:14px;
+      color:var(--muted);
+      margin-bottom:16px;
+    }
+    .activity-connect__button{
+      background:#fc4c02;
+      color:white;
+      border:none;
+      border-radius:6px;
+      padding:10px 20px;
+      font-size:13px;
+      font-weight:600;
+      cursor:pointer;
+      transition:opacity 0.2s;
+    }
+    .activity-connect__button:hover{
+      opacity:0.8;
+    }
+    .toggle-switch{
+      position:relative;
+      display:inline-block;
+      width:40px;
+      height:20px;
+      cursor:pointer;
+    }
+    .toggle-switch input{
+      opacity:0;
+      width:0;
+      height:0;
+    }
+    .toggle-slider{
+      position:absolute;
+      top:0;
+      left:0;
+      right:0;
+      bottom:0;
+      background:#2a3347;
+      border-radius:10px;
+      transition:0.3s;
+    }
+    .toggle-slider:before{
+      position:absolute;
+      content:"";
+      height:14px;
+      width:14px;
+      left:3px;
+      bottom:3px;
+      background:#9aa3b2;
+      border-radius:50%;
+      transition:0.3s;
+    }
+    .toggle-switch input:checked + .toggle-slider{
+      background:var(--accent);
+    }
+    .toggle-switch input:checked + .toggle-slider:before{
+      transform:translateX(20px);
+      background:white;
+    }
+    .stats{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+    .stat{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding-bottom:14px;
+      border-bottom:1px solid #1e2431;
+    }
+    .stat:last-child{
+      border-bottom:none;
+      padding-bottom:0;
+    }
+    .stat__label{
+      color:var(--muted);
+      font-size:13px;
+      text-transform:uppercase;
+      letter-spacing:0.5px;
+    }
+    .stat__value{
+      font-size:22px;
+      font-weight:700;
+      color:var(--accent);
+    }
+
+    /* Weekly Totals Card */
+    .weekly-card{
+      background:var(--panel);
+      border:1px solid #1e2431;
+      border-radius:var(--radius);
+      padding:20px;
+    }
+    .weekly-card__header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:16px;
+    }
+    .weekly-card__title{
+      font-size:13px;
+      color:var(--muted);
+      text-transform:uppercase;
+      letter-spacing:0.8px;
+      font-weight:600;
+    }
+    .weekly-card__details-btn{
+      background:transparent;
+      border:none;
+      color:var(--accent);
+      font-size:11px;
+      cursor:pointer;
+      padding:4px 8px;
+      border-radius:4px;
+      transition:background 0.2s;
+      font-weight:500;
+    }
+    .weekly-card__details-btn:hover{
+      background:rgba(99,102,241,0.1);
+    }
+    .weekly-card__separator{
+      height:1px;
+      background:#1e2431;
+      margin:16px 0;
+    }
+    .weekly-card__streak{
+      font-size:12px;
+      color:#ffa500;
+      font-weight:600;
+      letter-spacing:0.3px;
+    }
+    .weekly-workout-stats{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .weekly-workout-stat{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:8px 0;
+    }
+    .weekly-workout-stat__label{
+      font-size:13px;
+      color:var(--muted);
+      text-transform:capitalize;
+    }
+    .weekly-workout-stat__value{
+      font-size:16px;
+      font-weight:600;
+      color:var(--text);
+    }
+    .weekly-card__details-btn--full{
+      width:100%;
+      text-align:center;
+      padding:10px;
+    }
+
+    /* Weekly Summary Modal */
+    .modal{
+      display:none;
+      position:fixed;
+      top:0;
+      left:0;
+      right:0;
+      bottom:0;
+      background:rgba(0,0,0,0.8);
+      z-index:1000;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+    }
+    .modal__content{
+      background:var(--panel);
+      border:1px solid #1e2431;
+      border-radius:var(--radius);
+      max-width:800px;
+      width:100%;
+      max-height:90vh;
+      overflow:auto;
+      padding:24px;
+    }
+    .modal__header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:20px;
+    }
+    .modal__title{
+      font-size:20px;
+      margin:0;
+    }
+    .modal__close{
+      background:transparent;
+      border:none;
+      color:var(--muted);
+      font-size:24px;
+      cursor:pointer;
+      padding:0;
+      width:32px;
+      height:32px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:6px;
+    }
+    .modal__close:hover{
+      background:#23293a;
+      color:var(--text);
+    }
+
+    /* Weekly Summary */
+    .weekly-summary{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+    .day-card{
+      background:var(--bubble);
+      border:1px solid #23293a;
+      border-radius:12px;
+      padding:16px;
+    }
+    .day-card__header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:12px;
+      padding-bottom:12px;
+      border-bottom:1px solid #23293a;
+    }
+    .day-card__header h3{
+      margin:0;
+      font-size:16px;
+    }
+    .day-card__date{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .day-card__content{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+    .day-card__empty{
+      color:var(--muted);
+      font-size:14px;
+      font-style:italic;
+    }
+    .day-stats{
+      display:flex;
+      gap:16px;
+    }
+    .day-stat{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .day-stat__label{
+      font-size:11px;
+      color:var(--muted);
+      text-transform:uppercase;
+    }
+    .day-stat__value{
+      font-size:16px;
+      font-weight:600;
+      color:var(--accent);
+    }
+    .day-meals h4{
+      margin:0 0 8px 0;
+      font-size:14px;
+      color:var(--muted);
+      text-transform:uppercase;
+    }
+    .day-total{
+      margin:8px 0;
+      font-size:14px;
+    }
+    .day-total strong{
+      color:var(--accent);
+    }
+    .meals-list{
+      list-style:none;
+      padding:0;
+      margin:8px 0 0 0;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .meals-list li{
+      font-size:13px;
+      padding:6px 10px;
+      background:#0f1420;
+      border-radius:6px;
+      border:1px solid #23293a;
+    }
+    .meal-time{
+      color:var(--muted);
+      font-size:12px;
+      margin-right:8px;
+    }
+
+    /* Typing Indicator */
+    .typing-indicator{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:10px 12px;
+      border-radius:12px;
+      background:var(--bubble);
+      border:1px solid #23293a;
+      max-width:min(78%, 640px);
+      animation:slideIn 0.3s ease-out;
+    }
+    .typing-indicator__text{
+      color:var(--muted);
+      font-size:14px;
+    }
+    .typing-indicator__spinner{
+      width:16px;
+      height:16px;
+      border:2px solid var(--muted);
+      border-top-color:var(--accent);
+      border-radius:50%;
+      animation:spin 0.8s linear infinite;
+    }
+    @keyframes spin{
+      to{transform:rotate(360deg)}
+    }
+
+    /* Logo */
+    .app__logo{
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+    .app__logo-text{
+      font-size:20px;
+      font-weight:700;
+      color:var(--text);
+      letter-spacing:-0.5px;
+    }
+
+    /* Toggle Button (hamburger -> X) */
+    .toggle-btn{
+      display:flex;
+      flex-direction:column;
+      gap:5px;
+      background:transparent;
+      border:none;
+      padding:8px;
+      cursor:pointer;
+      border-radius:6px;
+      transition:background 0.2s;
+    }
+    .toggle-btn:hover{
+      background:rgba(255,255,255,0.05);
+    }
+    .toggle-btn span{
+      display:block;
+      width:24px;
+      height:3px;
+      background:var(--text);
+      border-radius:2px;
+      transition:all 0.3s ease;
+    }
+    /* When sidebar is open, hamburger becomes X */
+    body:not(.sidebar-hidden) .toggle-btn{
+      display:none;
+    }
+
+    /* Close button (X) - EXACT same size as hamburger */
+    .close-btn{
+      display:none;
+      flex-direction:column;
+      gap:5px;
+      background:transparent;
+      border:none;
+      padding:8px;
+      cursor:pointer;
+      border-radius:6px;
+      transition:background 0.2s;
+    }
+    .close-btn:hover{
+      background:rgba(255,255,255,0.05);
+    }
+    .close-btn span{
+      display:block;
+      width:24px;
+      height:3px;
+      background:var(--text);
+      border-radius:2px;
+      transition:all 0.3s ease;
+    }
+    /* Animate to X shape */
+    .close-btn span:nth-child(1){
+      transform:rotate(45deg) translate(6px, 6px);
+    }
+    .close-btn span:nth-child(2){
+      opacity:0;
+    }
+    .close-btn span:nth-child(3){
+      transform:rotate(-45deg) translate(6px, -6px);
+    }
+    /* Show X when sidebar is open, hide hamburger */
+    body:not(.sidebar-hidden) .close-btn{
+      display:flex;
+    }
+
+    /* Sidebar Footer */
+    .sidebar-footer{
+      margin-top:auto;
+      padding-top:16px;
+      border-top:1px solid #1e2431;
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+    .sidebar-footer__user{
+      flex:1;
+      min-width:0;
+    }
+    .sidebar-footer__name{
+      font-size:13px;
+      color:var(--muted);
+      font-weight:500;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      display:block;
+    }
+    .sidebar-footer__btn{
+      background:transparent;
+      border:1px solid #2a3347;
+      color:var(--muted);
+      padding:8px 12px;
+      border-radius:8px;
+      cursor:pointer;
+      transition:all 0.2s;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      flex-shrink:0;
+    }
+    .sidebar-footer__btn:hover{
+      background:#1e2431;
+      color:var(--accent);
+      border-color:var(--accent);
+    }
+    .sidebar-footer__btn--strava{
+      color:#fc4c02;
+      border-color:#fc4c02;
+    }
+    .sidebar-footer__btn--strava:hover{
+      background:#fc4c02;
+      color:white;
+      border-color:#fc4c02;
+    }
+    .sidebar-footer__btn--strava.loading svg{
+      animation:spin 1s linear infinite;
+    }
+    @keyframes spin{
+      from{transform:rotate(0deg);}
+      to{transform:rotate(360deg);}
+    }
+
+    /* Settings Modal */
+    .modal__content--wide{
+      max-width:750px;
+      width:90%;
+    }
+    .settings-tabs{
+      display:flex;
+      gap:0;
+      border-bottom:1px solid #1e2431;
+      margin-bottom:24px;
+    }
+    .settings-tab{
+      flex:1;
+      background:transparent;
+      border:none;
+      color:var(--muted);
+      padding:12px 16px;
+      cursor:pointer;
+      font-size:14px;
+      font-weight:500;
+      border-bottom:2px solid transparent;
+      transition:all 0.2s;
+    }
+    .settings-tab:hover{
+      color:var(--text);
+      background:#1a1f2e;
+    }
+    .settings-tab--active{
+      color:var(--accent);
+      border-bottom-color:var(--accent);
+    }
+    .settings-content{
+      min-height:300px;
+    }
+    .settings-panel{
+      display:none;
+      padding:4px 0;
+    }
+    .settings-panel--active{
+      display:block;
+    }
+    #weeklyContentSettings{
+      max-height:60vh;
+      overflow-y:auto;
+    }
+    .form-group{
+      margin-bottom:16px;
+    }
+    .form-label{
+      display:block;
+      font-size:13px;
+      color:var(--text);
+      font-weight:500;
+      margin-bottom:6px;
+    }
+    .form-input{
+      width:100%;
+      padding:10px 12px;
+      border-radius:8px;
+      border:1px solid #23293a;
+      background:#0f1420;
+      color:var(--text);
+      font-size:14px;
+      outline:none;
+      transition:border-color 0.2s;
+    }
+    .form-input:focus{
+      border-color:var(--accent);
+    }
+    .form-input:read-only{
+      opacity:0.6;
+      cursor:not-allowed;
+    }
+    .form-row{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:12px;
+    }
+    .form-textarea{
+      width:100%;
+      min-height:120px;
+      padding:10px 12px;
+      border-radius:8px;
+      border:1px solid #23293a;
+      background:#0f1420;
+      color:var(--text);
+      font-size:14px;
+      font-family:inherit;
+      outline:none;
+      resize:vertical;
+      transition:border-color 0.2s;
+    }
+    .form-textarea:focus{
+      border-color:var(--accent);
+    }
+    .form-hint{
+      font-size:12px;
+      color:var(--muted);
+      margin-top:4px;
+    }
+    .form-checkbox{
+      display:flex;
+      align-items:flex-start;
+      gap:12px;
+      cursor:pointer;
+    }
+    .form-checkbox__input{
+      margin-top:2px;
+      cursor:pointer;
+      width:18px;
+      height:18px;
+      flex-shrink:0;
+    }
+    .form-checkbox__label{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .form-checkbox__text{
+      font-size:14px;
+      color:var(--text);
+      font-weight:500;
+    }
+    .form-checkbox__hint{
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.4;
+    }
+    .preset-buttons{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:12px;
+      margin-bottom:24px;
+    }
+    .preset-btn{
+      background:#1a1f2e;
+      border:1px solid #2a3347;
+      border-radius:8px;
+      padding:12px;
+      cursor:pointer;
+      transition:all 0.2s;
+      text-align:left;
+    }
+    .preset-btn:hover{
+      border-color:var(--accent);
+      background:#1e2431;
+    }
+    .preset-btn__name{
+      display:block;
+      font-size:14px;
+      font-weight:600;
+      color:var(--text);
+      margin-bottom:4px;
+    }
+    .preset-btn__stats{
+      display:block;
+      font-size:11px;
+      color:var(--muted);
+    }
+    .settings-footer{
+      margin-top:24px;
+      padding-top:24px;
+      border-top:1px solid #1e2431;
+      display:flex;
+      justify-content:flex-end;
+    }
+
+    /* Strava Connection */
+    .strava-btn{
+      background:#fc4c02;
+      color:#fff;
+      border:none;
+      padding:12px 20px;
+      border-radius:8px;
+      font-size:14px;
+      font-weight:600;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      transition:all 0.2s;
+    }
+    .strava-btn:hover{
+      background:#e64402;
+      transform:translateY(-1px);
+    }
+    .strava-btn:active{
+      transform:translateY(0);
+    }
+    .strava-status{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:12px 16px;
+      background:#1a1f2e;
+      border:1px solid #1e2431;
+      border-radius:8px;
+      margin-top:8px;
+    }
+    .strava-status__info{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .strava-status__connected{
+      color:#51cf66;
+      font-weight:600;
+      font-size:14px;
+    }
+    .strava-status__lastSync{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .strava-btn--disconnect{
+      background:transparent;
+      color:var(--muted);
+      border:1px solid #2a3347;
+      padding:8px 16px;
+      font-size:13px;
+    }
+    .strava-btn--disconnect:hover{
+      background:#1e2431;
+      border-color:#fc4c02;
+      color:#fc4c02;
+      transform:none;
+    }
+
+    /* Advanced Settings Tab */
+    .advanced-section{
+      margin-bottom:24px;
+    }
+    .advanced-section__title{
+      font-size:16px;
+      font-weight:600;
+      color:var(--text);
+      margin:0 0 8px 0;
+    }
+    .advanced-section__description{
+      font-size:13px;
+      color:var(--muted);
+      margin:0 0 16px 0;
+      line-height:1.5;
+    }
+    .advanced-actions{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .btn--full{
+      width:100%;
+      justify-content:center;
+      display:flex;
+      align-items:center;
+    }
+    .btn--danger:hover{
+      background:#ff6b6b;
+      color:white;
+      border-color:#ff6b6b;
+    }
+
+    /* Onboarding Overlay */
+    .onboarding-overlay{
+      position:fixed;
+      top:0;
+      left:0;
+      right:0;
+      bottom:0;
+      width:100%;
+      height:100%;
+      height:100dvh; /* Dynamic viewport height for mobile */
+      background:linear-gradient(180deg, #0b0d12, #0f1115 40%);
+      z-index:2147483647; /* Max z-index to be above everything */
+      display:flex;
+      align-items:flex-start;
+      justify-content:center;
+      padding:20px;
+      padding-top:40px;
+      padding-bottom:40px;
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+    }
+    .onboarding-container{
+      max-width:650px;
+      width:100%;
+      overflow-y:visible;
+      padding:16px;
+    }
+    .onboarding-progress{
+      margin-bottom:20px;
+    }
+    .onboarding-progress__bar{
+      height:6px;
+      background:#1e2431;
+      border-radius:3px;
+      overflow:hidden;
+      margin-bottom:12px;
+    }
+    .onboarding-progress__fill{
+      height:100%;
+      background:var(--accent);
+      transition:width 0.3s ease;
+      width:33%;
+    }
+    .onboarding-progress__text{
+      text-align:center;
+      font-size:13px;
+      color:var(--muted);
+    }
+    .onboarding-step{
+      display:none;
+      padding-bottom:10px;
+    }
+    .onboarding-step--active{
+      display:block;
+      animation:fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn{
+      from{opacity:0;transform:translateY(20px)}
+      to{opacity:1;transform:translateY(0)}
+    }
+    .onboarding-title{
+      font-size:26px;
+      font-weight:700;
+      color:var(--text);
+      margin:0 0 8px 0;
+      text-align:center;
+      line-height:1.2;
+    }
+    .onboarding-subtitle{
+      font-size:14px;
+      color:var(--muted);
+      margin:0 0 20px 0;
+      text-align:center;
+      line-height:1.4;
+    }
+    .onboarding-presets{
+      display:grid;
+      grid-template-columns:repeat(2, 1fr);
+      gap:12px;
+      margin-bottom:0;
+    }
+    .onboarding-preset{
+      background:#1a1f2e;
+      border:2px solid #2a3347;
+      border-radius:10px;
+      padding:16px;
+      cursor:pointer;
+      transition:all 0.2s;
+      text-align:center;
+    }
+    .onboarding-preset:hover{
+      border-color:var(--accent);
+      background:#1e2431;
+      transform:translateY(-2px);
+    }
+    .onboarding-preset--selected{
+      border-color:var(--accent);
+      background:#1e2431;
+      box-shadow:0 0 0 3px rgba(77, 163, 255, 0.2);
+    }
+    .onboarding-preset__icon{
+      font-size:36px;
+      margin-bottom:8px;
+    }
+    .onboarding-preset__name{
+      font-size:16px;
+      font-weight:600;
+      color:var(--text);
+      margin-bottom:6px;
+    }
+    .onboarding-preset__stats{
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.5;
+    }
+    .onboarding-summary{
+      display:grid;
+      grid-template-columns:repeat(2, 1fr);
+      gap:16px;
+      margin-bottom:32px;
+    }
+    .onboarding-summary__item{
+      background:#1a1f2e;
+      border:1px solid #2a3347;
+      border-radius:10px;
+      padding:20px;
+      text-align:center;
+    }
+    .onboarding-summary__label{
+      display:block;
+      font-size:13px;
+      color:var(--muted);
+      margin-bottom:8px;
+    }
+    .onboarding-summary__value{
+      display:block;
+      font-size:24px;
+      font-weight:700;
+      color:var(--accent);
+    }
+    .onboarding-custom{
+      margin-bottom:0;
+    }
+    .onboarding-actions{
+      display:flex;
+      gap:12px;
+      justify-content:center;
+      margin-top:20px;
+      flex-wrap:wrap;
+    }
+    /* Ensure buttons work on iOS */
+    .onboarding-actions .btn,
+    .onboarding-preset {
+      -webkit-tap-highlight-color: rgba(0,217,255,0.2);
+      touch-action: manipulation;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .form-group{
+      margin-bottom:12px;
+    }
+    .form-label{
+      display:block;
+      font-size:12px;
+      font-weight:500;
+      color:var(--text);
+      margin-bottom:4px;
+    }
+    .form-input{
+      width:100%;
+      padding:8px 10px;
+      background:#0f1420;
+      border:1px solid #23293a;
+      border-radius:8px;
+      color:var(--text);
+      font-size:14px;
+      outline:none;
+      transition:border-color 0.2s;
+    }
+    .form-input:focus{
+      border-color:var(--accent);
+    }
+    .form-textarea{
+      width:100%;
+      padding:10px;
+      background:#0f1420;
+      border:1px solid #23293a;
+      border-radius:8px;
+      color:var(--text);
+      font-size:14px;
+      outline:none;
+      resize:vertical;
+      font-family:inherit;
+      line-height:1.4;
+      transition:border-color 0.2s;
+    }
+    .form-textarea:focus{
+      border-color:var(--accent);
+    }
+    .btn:disabled{
+      opacity:0.4;
+      cursor:not-allowed;
+    }
+    .btn:disabled:hover{
+      filter:none;
+    }
+
+    /* Onboarding Responsive */
+    @media (max-height:700px){
+      .onboarding-container{
+        padding:10px;
+      }
+      .onboarding-progress{
+        margin-bottom:20px;
+      }
+      .onboarding-title{
+        font-size:24px;
+        margin-bottom:8px;
+      }
+      .onboarding-subtitle{
+        font-size:14px;
+        margin-bottom:20px;
+      }
+      .onboarding-actions{
+        margin-top:20px;
+      }
+    }
+    @media (max-width:600px){
+      .onboarding-overlay{
+        padding:16px;
+        padding-top:30px;
+        padding-bottom:60px;
+        align-items:flex-start;
+      }
+      .onboarding-container{
+        max-height:none;
+        padding-bottom:20px;
+      }
+      .onboarding-presets{
+        grid-template-columns:1fr;
+        gap:10px;
+      }
+      .onboarding-preset{
+        padding:14px;
+      }
+      .onboarding-title{
+        font-size:22px;
+      }
+      .onboarding-subtitle{
+        font-size:13px;
+        margin-bottom:16px;
+      }
+      .onboarding-actions{
+        padding-bottom:20px;
+      }
+    }
+
+    /* UX Polish: Loading States */
+    .typing-indicator{
+      max-width:min(78%, 640px);
+      padding:10px 12px;
+      border-radius:12px;
+      background:var(--bubble);
+      border:1px solid #23293a;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      animation:slideIn 0.3s ease-out forwards;
+    }
+    .typing-indicator__text{
+      color:var(--muted);
+      font-size:14px;
+    }
+    .typing-indicator__dots{
+      display:flex;
+      gap:4px;
+    }
+    .typing-indicator__dot{
+      width:6px;
+      height:6px;
+      border-radius:50%;
+      background:var(--muted);
+      animation:typingBounce 1.4s infinite;
+    }
+    .typing-indicator__dot:nth-child(2){
+      animation-delay:0.2s;
+    }
+    .typing-indicator__dot:nth-child(3){
+      animation-delay:0.4s;
+    }
+    @keyframes typingBounce{
+      0%, 60%, 100%{
+        transform:translateY(0);
+        opacity:0.5;
+      }
+      30%{
+        transform:translateY(-8px);
+        opacity:1;
+      }
+    }
+
+    /* Empty State Messages */
+    .empty-state{
+      text-align:center;
+      padding:60px 20px;
+      color:var(--muted);
+    }
+    .empty-state__icon{
+      font-size:48px;
+      margin-bottom:16px;
+      opacity:0.3;
+    }
+    .empty-state__title{
+      font-size:18px;
+      font-weight:600;
+      margin-bottom:8px;
+      color:var(--text);
+    }
+    .empty-state__text{
+      font-size:14px;
+      line-height:1.6;
+    }
+    .empty-macros{
+      padding:16px;
+      text-align:center;
+      background:rgba(77, 163, 255, 0.05);
+      border:1px dashed #2a3347;
+      border-radius:10px;
+      margin-bottom:16px;
+    }
+    .empty-macros__text{
+      font-size:13px;
+      color:var(--muted);
+      line-height:1.5;
+    }
+
+    /* Error Messages */
+    .error-toast{
+      position:fixed;
+      top:20px;
+      right:20px;
+      background:#ff6b6b;
+      color:white;
+      padding:12px 20px;
+      border-radius:10px;
+      font-size:14px;
+      font-weight:500;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3);
+      z-index:10001;
+      animation:slideInRight 0.3s ease-out;
+      max-width:400px;
+    }
+    @keyframes slideInRight{
+      from{
+        transform:translateX(100%);
+        opacity:0;
+      }
+      to{
+        transform:translateX(0);
+        opacity:1;
+      }
+    }
+
+    /* Custom Confirmation Modal */
+    .confirm-modal{
+      position:fixed;
+      top:0;
+      left:0;
+      right:0;
+      bottom:0;
+      z-index:10002;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+    }
+    .confirm-modal__overlay{
+      position:absolute;
+      top:0;
+      left:0;
+      right:0;
+      bottom:0;
+      background:rgba(0,0,0,0.7);
+      backdrop-filter:blur(4px);
+    }
+    .confirm-modal__content{
+      position:relative;
+      background:var(--panel);
+      border:1px solid #1e2431;
+      border-radius:var(--radius);
+      padding:24px;
+      max-width:400px;
+      width:100%;
+      box-shadow:0 8px 32px rgba(0,0,0,0.5);
+      animation:modalZoomIn 0.2s ease-out;
+    }
+    @keyframes modalZoomIn{
+      from{
+        opacity:0;
+        transform:scale(0.9);
+      }
+      to{
+        opacity:1;
+        transform:scale(1);
+      }
+    }
+    .confirm-modal__title{
+      font-size:18px;
+      font-weight:600;
+      color:var(--text);
+      margin:0 0 12px 0;
+    }
+    .confirm-modal__message{
+      font-size:14px;
+      color:var(--muted);
+      line-height:1.6;
+      margin:0 0 24px 0;
+    }
+    .confirm-modal__actions{
+      display:flex;
+      gap:12px;
+      justify-content:flex-end;
+    }
+
+  </style>
+</head>
+
+<body class="sidebar-hidden sidebar-loading">
+  <!-- Mobile Menu Button -->
+  <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </button>
+
+  <!-- Mobile Backdrop -->
+  <div class="mobile-backdrop" id="mobileBackdrop"></div>
+
+  <!-- Onboarding Overlay -->
+  <div id="onboardingOverlay" class="onboarding-overlay" style="display:none;">
+    <div class="onboarding-container">
+      <!-- Progress Indicator -->
+      <div class="onboarding-progress">
+        <div class="onboarding-progress__bar">
+          <div class="onboarding-progress__fill" id="onboardingProgressFill"></div>
+        </div>
+        <div class="onboarding-progress__text" id="onboardingProgressText">Step 1 of 3</div>
+      </div>
+
+      <!-- Step 1: Choose Goal -->
+      <div class="onboarding-step onboarding-step--active" data-step="1">
+        <h1 class="onboarding-title">Welcome to EatTailor! 🎯</h1>
+        <p class="onboarding-subtitle">Let's set up your nutrition goals</p>
+
+        <div class="onboarding-presets">
+          <button class="onboarding-preset" data-preset="gym-bro">
+            <div class="onboarding-preset__icon">💪</div>
+            <div class="onboarding-preset__name">Gym Bro</div>
+            <div class="onboarding-preset__stats">2400 cal<br>200p / 200c / 80f</div>
+          </button>
+          <button class="onboarding-preset" data-preset="runner">
+            <div class="onboarding-preset__icon">🏃</div>
+            <div class="onboarding-preset__name">Runner</div>
+            <div class="onboarding-preset__stats">2500 cal<br>120p / 350c / 70f</div>
+          </button>
+          <button class="onboarding-preset" data-preset="balanced">
+            <div class="onboarding-preset__icon">⚖️</div>
+            <div class="onboarding-preset__name">Balanced</div>
+            <div class="onboarding-preset__stats">2000 cal<br>150p / 225c / 65f</div>
+          </button>
+          <button class="onboarding-preset" data-preset="custom">
+            <div class="onboarding-preset__icon">✏️</div>
+            <div class="onboarding-preset__name">Custom</div>
+            <div class="onboarding-preset__stats">Set your own<br>goals</div>
+          </button>
+        </div>
+
+        <div class="onboarding-actions">
+          <button class="btn" id="onboardingStep1NextBtn" disabled>Next →</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Customize -->
+      <div class="onboarding-step" data-step="2">
+        <h1 class="onboarding-title">Review Your Goals</h1>
+        <p class="onboarding-subtitle">Adjust if needed</p>
+
+        <div class="onboarding-custom">
+          <div class="form-group">
+            <label class="form-label">Daily Calories</label>
+            <input type="number" id="onboardingCalories" class="form-input" placeholder="2000">
+          </div>
+          <div class="form-row" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+            <div class="form-group">
+              <label class="form-label">Protein (g)</label>
+              <input type="number" id="onboardingProtein" class="form-input" placeholder="150">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Carbs (g)</label>
+              <input type="number" id="onboardingCarbs" class="form-input" placeholder="225">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Fat (g)</label>
+              <input type="number" id="onboardingFat" class="form-input" placeholder="65">
+            </div>
+          </div>
+        </div>
+
+        <div class="onboarding-actions">
+          <button class="btn btn--ghost" id="onboardingStep2BackBtn">← Back</button>
+          <button class="btn" id="onboardingStep2NextBtn">Next →</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Dietary Preferences -->
+      <div class="onboarding-step" data-step="3">
+        <h1 class="onboarding-title">Tell Us About You</h1>
+        <p class="onboarding-subtitle">Any dietary preferences, restrictions, or allergies? (Optional)</p>
+
+        <div class="form-group">
+          <textarea id="onboardingDietaryInfo" class="form-textarea" maxlength="500" placeholder="e.g., I'm vegetarian, allergic to peanuts, prefer high-protein meals..." style="min-height:80px;"></textarea>
+          <div class="form-hint" style="font-size:11px;color:var(--muted);margin-top:6px;"><span id="onboardingCharCount">0</span>/500 characters</div>
+        </div>
+
+        <div class="onboarding-actions">
+          <button class="btn btn--ghost" id="onboardingStep3BackBtn">← Back</button>
+          <button class="btn btn--ghost" id="onboardingSkipBtn">Skip</button>
+          <button class="btn" id="onboardingFinishBtn">Finish Setup</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app">
+
+    <!-- Header with Logo -->
+    <header class="app__header">
+      <button id="sidebarToggle" class="toggle-btn" aria-label="Toggle sidebar">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      <button id="sidebarClose" class="close-btn" aria-label="Close sidebar">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      <div class="app__logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="16" r="14" fill="#198f51" opacity="0.1"/>
+          <path d="M16 8C11.6 8 8 11.6 8 16C8 20.4 11.6 24 16 24C20.4 24 24 20.4 24 16C24 11.6 20.4 8 16 8ZM16 22C12.7 22 10 19.3 10 16C10 12.7 12.7 10 16 10C19.3 10 22 12.7 22 16C22 19.3 19.3 22 16 22Z" fill="#198f51"/>
+          <circle cx="16" cy="14" r="2" fill="#198f51"/>
+          <path d="M12 18H20V19H12V18Z" fill="#198f51"/>
+        </svg>
+        <span class="app__logo-text">EatTailor</span>
+      </div>
+    </header>
+
+    <div class="app__body">
+      <!-- Left column: trackers -->
+      <aside class="sidebar">
+        <!-- Mobile Sidebar Header -->
+        <div class="mobile-sidebar-header">
+          <div class="mobile-sidebar-logo">
+            <span class="mobile-sidebar-logo__icon">🟢</span>
+            <span class="mobile-sidebar-logo__text">EatTailor</span>
+          </div>
+          <button class="mobile-sidebar-close" id="sidebarCloseMobile" aria-label="Close sidebar">✕</button>
+        </div>
+
+        <!-- Macro Progress -->
+        <section class="macro-section">
+          <h2 class="macro-section__title">Today's Macros</h2>
+
+          <!-- Empty State (shown when no meals logged) -->
+          <div id="emptyMacrosState" class="empty-macros" style="display:none;">
+            <div class="empty-macros__text">
+              📊 No meals logged yet<br>
+              Tell me what you ate to start tracking!
+            </div>
+          </div>
+
+          <div class="macro-row">
+            <div class="macro-row__header">
+              <span class="macro-row__label">Calories</span>
+              <span class="macro-row__value" id="caloriesText">0 / 2000</span>
+            </div>
+            <div class="macro-bar">
+              <div class="macro-fill macro-fill--calories" id="caloriesFill" style="width:0%"></div>
+            </div>
+          </div>
+
+          <div class="macro-row">
+            <div class="macro-row__header">
+              <span class="macro-row__label">Protein</span>
+              <span class="macro-row__value" id="proteinText">0g / 150g</span>
+            </div>
+            <div class="macro-bar">
+              <div class="macro-fill macro-fill--protein" id="proteinFill" style="width:0%"></div>
+            </div>
+          </div>
+
+          <div class="macro-row">
+            <div class="macro-row__header">
+              <span class="macro-row__label">Carbs</span>
+              <span class="macro-row__value" id="carbsText">0g / 225g</span>
+            </div>
+            <div class="macro-bar">
+              <div class="macro-fill macro-fill--carbs" id="carbsFill" style="width:0%"></div>
+            </div>
+          </div>
+
+          <div class="macro-row">
+            <div class="macro-row__header">
+              <span class="macro-row__label">Fat</span>
+              <span class="macro-row__value" id="fatText">0g / 65g</span>
+            </div>
+            <div class="macro-bar">
+              <div class="macro-fill macro-fill--fat" id="fatFill" style="width:0%"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Activity Stats Card -->
+        <div class="activity-card" id="activityCard">
+          <div class="activity-card__header">
+            <div class="activity-card__title">Today's Activity</div>
+            <div class="activity-card__streak" id="activityStreak"></div>
+          </div>
+          <div class="activity-card__separator"></div>
+          <div class="activity-card__content" id="activityContent">
+            <!-- Content will be dynamically rendered -->
+          </div>
+          <div class="activity-card__separator"></div>
+          <div class="activity-card__source" id="activitySource">-</div>
+        </div>
+
+        <!-- Weekly Totals Card -->
+        <div class="weekly-card">
+          <div class="weekly-card__header">
+            <div class="weekly-card__title">This Week</div>
+            <div class="weekly-card__streak" id="weeklyStreak"></div>
+          </div>
+
+          <div class="weekly-card__separator"></div>
+
+          <div class="weekly-workout-stats">
+            <div class="weekly-workout-stat">
+              <span class="weekly-workout-stat__label">Workouts</span>
+              <span class="weekly-workout-stat__value" id="weeklyWorkoutCount">0</span>
+            </div>
+
+            <div class="weekly-workout-stat">
+              <span class="weekly-workout-stat__label">Active time</span>
+              <span class="weekly-workout-stat__value" id="weeklyActiveTime">0h 0min</span>
+            </div>
+
+            <div class="weekly-workout-stat">
+              <span class="weekly-workout-stat__label">Avg workout</span>
+              <span class="weekly-workout-stat__value" id="weeklyAvgDuration">0 min</span>
+            </div>
+          </div>
+
+          <div class="weekly-card__separator"></div>
+
+          <button class="weekly-card__details-btn weekly-card__details-btn--full" id="viewWeeklyBtn">View Details →</button>
+        </div>
+
+        <!-- Settings and Logout Buttons -->
+        <div class="sidebar-footer">
+          <div class="sidebar-footer__user">
+            <span class="sidebar-footer__name" id="sidebarUserName"></span>
+          </div>
+          <button id="refreshStravaBtn" class="sidebar-footer__btn sidebar-footer__btn--strava" title="Refresh Strava Data" style="display:none;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0118.8-4.3M22 12.5a10 10 0 01-18.8 4.2"/>
+            </svg>
+          </button>
+          <button id="settingsBtn" class="sidebar-footer__btn" title="Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 1v6m0 6v6M5.6 5.6l4.2 4.2m4.2 4.2l4.2 4.2M1 12h6m6 0h6M5.6 18.4l4.2-4.2m4.2-4.2l4.2-4.2"/>
+            </svg>
+          </button>
+          <button id="sidebarLogoutBtn" class="sidebar-footer__btn" title="Logout">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+            </svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Right column: chat -->
+      <main class="main">
+        <!-- Chat Messages -->
+        <div class="chat">
+          <ul id="messages" class="chat__messages"></ul>
+        </div>
+
+        <!-- Composer -->
+        <form id="form" class="composer">
+          <label for="message" class="sr-only">Type a message</label>
+          <textarea
+            id="message"
+            class="composer__input"
+            rows="1"
+            placeholder="Type a message..."
+            data-placeholder-desktop="Press Enter to send • Shift+Enter for new line"
+            aria-label="Type a message"
+          ></textarea>
+          <button type="submit" id="sendBtn" class="btn">Send</button>
+        </form>
+
+        <!-- Footer -->
+        <footer class="app__footer">
+          <div style="font-size:11px;color:var(--muted);opacity:0.7;">
+            AI can make mistakes. Not a substitute for professional medical or dietary advice.
+          </div>
+        </footer>
+      </main>
+    </div>
+
+  </div>
+
+  <!-- Weekly Summary Modal -->
+  <div id="weeklyModal" class="modal" style="display:none;">
+    <div class="modal__content">
+      <div class="modal__header">
+        <h2 class="modal__title">Weekly Summary</h2>
+        <button id="closeModal" class="modal__close" aria-label="Close">&times;</button>
+      </div>
+      <div id="weeklyContent"></div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal" style="display:none;">
+    <div class="modal__content modal__content--wide">
+      <div class="modal__header">
+        <h2 class="modal__title">Settings</h2>
+        <button id="closeSettingsModal" class="modal__close" aria-label="Close">&times;</button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="settings-tabs">
+        <button class="settings-tab settings-tab--active" data-tab="profile">Profile</button>
+        <button class="settings-tab" data-tab="macros">Macro Goals</button>
+        <button class="settings-tab" data-tab="ai">AI Preferences</button>
+        <button class="settings-tab" data-tab="history">History</button>
+        <button class="settings-tab" data-tab="advanced">Advanced</button>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="settings-content">
+        <!-- Profile Tab -->
+        <div class="settings-panel settings-panel--active" data-panel="profile">
+          <div class="form-group">
+            <label class="form-label">Name</label>
+            <input type="text" id="settingsName" class="form-input" placeholder="Your name">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" id="settingsEmail" class="form-input" readonly>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Weight (lbs)</label>
+              <input type="number" id="settingsWeight" class="form-input" placeholder="170">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Height (inches)</label>
+              <input type="number" id="settingsHeight" class="form-input" placeholder="70">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Goal</label>
+            <select id="settingsGoal" class="form-input">
+              <option value="cut">Cut (Lose Weight)</option>
+              <option value="maintain">Maintain</option>
+              <option value="bulk">Bulk (Gain Weight)</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+
+          <!-- Strava Connection Section -->
+          <div class="form-group" style="margin-top:32px; padding-top:24px; border-top:1px solid #1e2431;">
+            <label class="form-label">Strava Connection</label>
+            <div id="stravaConnectionStatus">
+              <!-- Populated by JavaScript -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Macro Goals Tab -->
+        <div class="settings-panel" data-panel="macros">
+          <div class="preset-buttons">
+            <button class="preset-btn" data-preset="gym-bro">
+              <span class="preset-btn__name">Gym Bro</span>
+              <span class="preset-btn__stats">2400 cal • 200p/200c/80f</span>
+            </button>
+            <button class="preset-btn" data-preset="runner">
+              <span class="preset-btn__name">Runner</span>
+              <span class="preset-btn__stats">2500 cal • 120p/350c/70f</span>
+            </button>
+            <button class="preset-btn" data-preset="balanced">
+              <span class="preset-btn__name">Balanced</span>
+              <span class="preset-btn__stats">2000 cal • 150p/225c/65f</span>
+            </button>
+            <button class="preset-btn" data-preset="custom">
+              <span class="preset-btn__name">Custom</span>
+              <span class="preset-btn__stats">Set your own</span>
+            </button>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Daily Calories</label>
+            <input type="number" id="macroCalories" class="form-input" placeholder="2000">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Protein (g)</label>
+              <input type="number" id="macroProtein" class="form-input" placeholder="150">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Carbs (g)</label>
+              <input type="number" id="macroCarbs" class="form-input" placeholder="225">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Fat (g)</label>
+              <input type="number" id="macroFat" class="form-input" placeholder="65">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top:24px;">
+            <label class="form-checkbox">
+              <input type="checkbox" id="adjustForActivity" class="form-checkbox__input">
+              <span class="form-checkbox__label">
+                <span class="form-checkbox__text">Adjust targets based on activity data</span>
+                <span class="form-checkbox__hint">Your calorie target will automatically increase based on calories burned from activity tracking</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <!-- AI Preferences Tab -->
+        <div class="settings-panel" data-panel="ai">
+          <div class="form-group">
+            <label class="form-label">Tell the AI about yourself</label>
+            <textarea id="aiPreferences" class="form-textarea" maxlength="500" placeholder="e.g., I'm allergic to peanuts, I hate cilantro, I'm vegetarian, I prefer high-protein meals..."></textarea>
+            <div class="form-hint"><span id="aiCharCount">0</span>/500 characters</div>
+          </div>
+        </div>
+
+        <!-- History Tab -->
+        <div class="settings-panel" data-panel="history">
+          <div id="weeklyContentSettings"></div>
+        </div>
+
+        <!-- Advanced Tab -->
+        <div class="settings-panel" data-panel="advanced">
+          <div class="advanced-section">
+            <h3 class="advanced-section__title">Data Management</h3>
+            <p class="advanced-section__description">Export your nutrition data or reset your tracking</p>
+
+            <div class="advanced-actions">
+              <button id="exportTextBtnSettings" class="btn btn--ghost btn--full">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                </svg>
+                Export as Text
+              </button>
+              <button id="exportJsonBtnSettings" class="btn btn--ghost btn--full">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                </svg>
+                Export as JSON
+              </button>
+            </div>
+          </div>
+
+          <div class="advanced-section" style="margin-top:24px;">
+            <h3 class="advanced-section__title">Reset Data</h3>
+            <p class="advanced-section__description">Clear your chat history or reset today's nutrition tracking</p>
+
+            <div class="advanced-actions">
+              <button id="clearBtnSettings" class="btn btn--ghost btn--full btn--danger">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;">
+                  <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                </svg>
+                Clear Chat History
+              </button>
+              <button id="resetTodayBtnSettings" class="btn btn--ghost btn--full btn--danger">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;">
+                  <path d="M3 12a9 9 0 1018 0 9 9 0 10-18 0M12 7v5l3 3"/>
+                </svg>
+                Reset Today's Data
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-footer">
+        <button id="saveSettingsBtn" class="btn">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Confirmation Modal -->
+  <div id="confirmModal" class="confirm-modal" style="display:none;">
+    <div class="confirm-modal__overlay"></div>
+    <div class="confirm-modal__content">
+      <h3 class="confirm-modal__title" id="confirmTitle">Confirm Action</h3>
+      <p class="confirm-modal__message" id="confirmMessage">Are you sure?</p>
+      <div class="confirm-modal__actions">
+        <button id="confirmCancelBtn" class="btn btn--ghost">Cancel</button>
+        <button id="confirmOkBtn" class="btn btn--danger">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
+    import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
+    import { getFirestore } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAO85xsJZNG5e2nUokRz_C-flZuwcueLUw",
+      authDomain: "eattailor.firebaseapp.com",
+      projectId: "eattailor",
+      storageBucket: "eattailor.firebasestorage.app",
+      messagingSenderId: "307976845080",
+      appId: "1:307976845080:web:4d951add50da42972a506d",
+      measurementId: "G-S81Q5CB48Z"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Make available globally
+    window.firebaseAuth = auth;
+    window.firebaseDb = db;
+    window.db = db; // Alias for compatibility
+
+    // Check authentication
+    onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        // Not logged in, redirect to auth page
+        console.log('❌ No user, redirecting to auth.html');
+        window.location.href = 'auth.html';
+      } else {
+        // User logged in, set current user FIRST
+        window.currentUser = user;
+        console.log('✅ User logged in:', user.email);
+        console.log('✅ Set window.currentUser:', window.currentUser);
+        console.log('✅ Set window.firebaseDb:', window.firebaseDb);
+        console.log('✅ Set window.db:', window.db);
+        console.log('✅ Set window.firebaseAuth:', window.firebaseAuth);
+
+        // Load app.js and start the app
+        console.log('🚀 Loading app.js...');
+        const script = document.createElement('script');
+        script.src = 'app.js';
+        script.type = 'module';
+        script.onload = () => {
+          console.log('✅ app.js loaded successfully');
+          console.log('🎬 Calling window.startEatTailorApp()...');
+
+          // Wait a tiny bit to ensure the module is fully parsed
+          setTimeout(() => {
+            if (typeof window.startEatTailorApp === 'function') {
+              window.startEatTailorApp();
+            } else {
+              console.error('❌ window.startEatTailorApp is not defined!');
+            }
+          }, 50);
+        };
+        script.onerror = (e) => console.error('❌ Error loading app.js:', e);
+        document.body.appendChild(script);
+      }
+    });
+
+    // Logout handler
+    window.logout = async function() {
+      try {
+        await signOut(auth);
+        window.location.href = 'auth.html';
+      } catch (error) {
+        console.error('Logout error:', error);
+        alert('Failed to log out');
+      }
+    };
+  </script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    console.log('🔧 ========== PWA INITIALIZATION ==========');
+    console.log('🔧 Service Worker support:', 'serviceWorker' in navigator);
+    console.log('🔧 Current URL:', window.location.href);
+    console.log('🔧 Origin:', window.location.origin);
+
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        console.log('🔧 Page loaded, registering Service Worker...');
+
+        navigator.serviceWorker.register('/service-worker.js')
+          .then((registration) => {
+            console.log('✅ Service Worker registered successfully!');
+            console.log('   Scope:', registration.scope);
+            console.log('   Active:', registration.active);
+            console.log('   Installing:', registration.installing);
+            console.log('   Waiting:', registration.waiting);
+
+            // Check for updates
+            registration.addEventListener('updatefound', () => {
+              const newWorker = registration.installing;
+              console.log('🔄 New Service Worker found, updating...');
+
+              newWorker.addEventListener('statechange', () => {
+                console.log('🔄 Service Worker state changed:', newWorker.state);
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('✅ New content available, reload to update');
+                  // Optionally show a notification to the user
+                }
+              });
+            });
+          })
+          .catch((error) => {
+            console.error('❌ Service Worker registration FAILED!');
+            console.error('   Error:', error);
+            console.error('   Error message:', error.message);
+            console.error('   Error stack:', error.stack);
+          });
+      });
+
+      // Handle service worker updates
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          console.log('🔄 Service Worker updated, reloading page...');
+          window.location.reload();
+        }
+      });
+    } else {
+      console.warn('⚠️ Service Workers are not supported in this browser');
+    }
+
+    // Check manifest
+    fetch('/manifest.json')
+      .then(response => {
+        console.log('🔧 Manifest fetch status:', response.status);
+        return response.json();
+      })
+      .then(manifest => {
+        console.log('✅ Manifest loaded successfully:', manifest);
+      })
+      .catch(error => {
+        console.error('❌ Manifest loading FAILED:', error);
+      });
+  </script>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
