@@ -205,6 +205,18 @@ function getTodayKey() {
   return getLocalDateString(new Date());
 }
 
+// "2026-07-27" through new Date() parses as UTC midnight, which is the previous day in
+// any negative-offset timezone. Every date key must be parsed in local time or history
+// walks backwards one day on every load.
+function parseLocalDateKey(dateKey) {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey || "").trim());
+  if (iso) {
+    return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  }
+  const legacy = new Date(dateKey);
+  return isNaN(legacy.getTime()) ? null : new Date(legacy.getFullYear(), legacy.getMonth(), legacy.getDate());
+}
+
 async function loadMessages() {
   messages = await loadMessagesFromFirestore(db, currentUser.uid);
 }
@@ -703,10 +715,10 @@ async function loadDailyTotals() {
     let needsMigration = false;
 
     for (const [dateKey, value] of Object.entries(data)) {
-      const parsedDate = new Date(dateKey);
+      const parsedDate = parseLocalDateKey(dateKey);
 
       // Skip invalid dates or dates older than 7 days
-      if (isNaN(parsedDate.getTime()) || parsedDate < sevenDaysAgo) {
+      if (!parsedDate || parsedDate < sevenDaysAgoDate) {
         debugLog(`📥 [LOAD DAILY TOTALS] ❌ Skipped: "${dateKey}"`);
         continue;
       }
@@ -810,8 +822,8 @@ function getWeeklyTotals() {
 
   // Sum calories consumed (last 7 days only)
   for (const [dateKey, data] of Object.entries(dailyTotals)) {
-    const entryDate = new Date(dateKey);
-    if (entryDate >= sevenDaysAgo && entryDate <= today) {
+    const entryDate = parseLocalDateKey(dateKey);
+    if (entryDate && entryDate >= sevenDaysAgo && entryDate <= today) {
       totalConsumed += data.calories || 0;
       debugLog(`📊 [WEEKLY TOTALS] Consumed ${dateKey}: ${data.calories} cal`);
     }
@@ -819,8 +831,8 @@ function getWeeklyTotals() {
 
   // Sum calories burned from activity tracker (last 7 days only)
   for (const [dateKey, data] of Object.entries(weeklyData)) {
-    const entryDate = new Date(dateKey);
-    if (entryDate >= sevenDaysAgo && entryDate <= today) {
+    const entryDate = parseLocalDateKey(dateKey);
+    if (entryDate && entryDate >= sevenDaysAgo && entryDate <= today) {
       debugLog(`📊 [WEEKLY TOTALS] ${dateKey}: ${data.caloriesBurned} calories (source: ${data.source || 'unknown'})`);
       totalBurned += data.caloriesBurned || 0;
     }

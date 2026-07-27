@@ -1,4 +1,4 @@
-const CACHE_NAME = 'eattailor-v27';
+const CACHE_NAME = 'eattailor-v28';
 const urlsToCache = [
   '/',
   '/index.html',

@@ -1,10 +1,11 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="512" height="512" fill="#4da3ff" rx="64"/>
-
-  <!-- White circle background -->
-  <circle cx="256" cy="256" r="180" fill="white"/>
-
-  <!-- NT Text -->
-  <text x="256" y="300" font-family="system-ui, -apple-system, sans-serif" font-size="160" font-weight="700" text-anchor="middle" fill="#4da3ff">NT</text>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#198f51"/>
+      <stop offset="100%" stop-color="#0f6b3b"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#4df7ab" stroke-width="10" opacity="0.55"/>
+  <text x="256" y="316" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="176" font-weight="700" letter-spacing="-6" text-anchor="middle" fill="#ffffff">ET</text>
 </svg>

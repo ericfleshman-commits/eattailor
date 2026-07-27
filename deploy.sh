@@ -12,7 +12,7 @@ cd "$(dirname "$0")"
 # Node lives outside the default PATH on this machine (Hermes bundle / dev tools).
 export PATH="$HOME/dev/.tools/node/bin:$HOME/.hermes/node/bin:$PATH"
 
-FILES="app.js app.html index.html auth.html server.js chat-core.js cron.js strava-helper.js strava-integration.js firestore-helpers.js settings.js onboarding.js firebase-config.js style.css service-worker.js manifest.json package.json"
+FILES="app.js app.html index.html auth.html server.js chat-core.js cron.js strava-helper.js strava-integration.js firestore-helpers.js settings.js onboarding.js firebase-config.js style.css service-worker.js manifest.json package.json icon.svg icon-192.png icon-512.png apple-touch-icon.png"
 
 echo ">> Syntax check (server-side files)"
 node --check server.js
