@@ -232,7 +232,7 @@ app.post("/api/chat", verifyIdToken, async (req, res) => {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        model: process.env.OPENAI_MODEL || "gpt-5-mini",
         messages: messagesWithSystem,
         tools: tools,
         tool_choice: "auto"
@@ -402,7 +402,7 @@ app.post("/api/strava/webhook", async (req, res) => {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_BRIEF_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini",
+        model: process.env.OPENAI_BRIEF_MODEL || process.env.OPENAI_MODEL || "gpt-5-mini",
         messages: messages,
       }),
     });

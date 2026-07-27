@@ -4,7 +4,7 @@ import { doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.0.2/f
 
 /* Debug mode - set to false for production */
 const DEBUG_MODE = false;
-const debugLog = (...args) => { if (DEBUG_MODE) debugLog(...args); };
+const debugLog = (...args) => { if (DEBUG_MODE) console.log(...args); };
 const debugError = (...args) => { if (DEBUG_MODE) debugError(...args); };
 
 debugLog('🚴 Strava integration module loaded');

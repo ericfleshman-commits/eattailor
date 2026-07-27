@@ -481,7 +481,11 @@ async function loadActivityData() {
 }
 
 function getActivitySummary() {
-  return `Today's Activity Stats:\n- Steps: ${activityData.steps.toLocaleString()}\n- Calories Burned: ${activityData.caloriesBurned}\n- Active Minutes: ${activityData.activeMinutes}`;
+  if (!activityData) {
+    return "Today's Activity Stats:\n- No activity data yet. Log a workout in chat or connect a tracker.";
+  }
+  const steps = typeof activityData.steps === "number" ? activityData.steps.toLocaleString() : "0";
+  return `Today's Activity Stats:\n- Steps: ${steps}\n- Calories Burned: ${activityData.caloriesBurned || 0}\n- Active Minutes: ${activityData.activeMinutes || 0}`;
 }
 
 async function renderActivityStats() {
@@ -791,39 +795,6 @@ async function saveCurrentMacros(macros) {
   debugLog('💾 ========== SAVE COMPLETE ==========');
 }
 
-function updateDailyTotal(calories) {
-  const today = getTodayKey();
-  if (!dailyTotals[today]) {
-    dailyTotals[today] = { calories: 0, meals: [] };
-  }
-  dailyTotals[today].calories = calories;
-  saveDailyTotals();
-  renderWeeklyTotals();
-}
-
-function addMealToDaily(mealDescription) {
-  const today = getTodayKey();
-  debugLog('🍽️ [ADD MEAL] Adding meal to dailyTotals...');
-  debugLog('🍽️ [ADD MEAL] Today key:', today);
-  debugLog('🍽️ [ADD MEAL] Meal description:', mealDescription);
-
-  if (!dailyTotals[today]) {
-    dailyTotals[today] = { calories: 0, meals: [] };
-    debugLog('🍽️ [ADD MEAL] Created new entry for today');
-  }
-
-  const mealEntry = {
-    description: mealDescription,
-    time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  };
-
-  dailyTotals[today].meals.push(mealEntry);
-  debugLog('🍽️ [ADD MEAL] Meal added. Total meals today:', dailyTotals[today].meals.length);
-  debugLog('🍽️ [ADD MEAL] All dailyTotals keys:', Object.keys(dailyTotals));
-  debugLog('🍽️ [ADD MEAL] Today\'s data:', dailyTotals[today]);
-
-  saveDailyTotals();
-}
 
 function getWeeklyTotals() {
   let totalConsumed = 0;
@@ -1435,81 +1406,6 @@ window.rateMessage = async function(messageId, thumbs) {
   }
 }
 
-/* =========================
-   OpenAI: full history
-========================= */
-
-async function askNutritionAssistant(newUserMessage) {
-  // Load user's macro goals from Firestore
-  let goals = {
-    calories: 2000,
-    protein: 150,
-    carbs: 225,
-    fat: 65
-  };
-
-  if (db && currentUser) {
-    try {
-      const settings = await loadSettingsFromFirestore(db, currentUser.uid);
-      if (settings.macroGoals) {
-        goals = settings.macroGoals;
-      }
-    } catch (error) {
-      console.warn('⚠️ Could not load macro goals, using defaults:', error);
-    }
-  }
-
-  // Build message history for context
-  const history = [];
-  for (const m of messages) {
-    history.push({ role: m.role, content: m.text });
-  }
-
-  // Get Firebase ID token for auth
-  let idToken = "";
-  if (currentUser) {
-    try {
-      idToken = await currentUser.getIdToken();
-    } catch (e) {
-      console.warn("Failed to get ID token", e);
-    }
-  }
-
-  // Call backend /api/chat with structured data
-  debugLog('📡 Sending to API - Current macros:', currentMacros);
-  const response = await fetch("/api/chat", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${idToken}`
-    },
-    body: JSON.stringify({
-      messages: history,
-      currentMacros: {
-        calories: currentMacros.calories,
-        protein: currentMacros.protein,
-        carbs: currentMacros.carbs,
-        fat: currentMacros.fat
-      },
-      macroGoals: goals
-    })
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error("API error: " + response.status + " " + text);
-  }
-
-  const data = await response.json();
-
-  debugLog('📡 API Response:', data);
-
-  // Return both message and macros
-  return {
-    message: data.reply,
-    macros: data.macros
-  };
-}
 
 /* =========================
    UX Polish: Custom Confirmation Modal
