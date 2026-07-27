@@ -127,6 +127,59 @@ export function getChatTools() {
   ];
 }
 
+const MATCH_STOPWORDS = new Set([
+  "the", "a", "an", "of", "with", "and", "my", "just", "logged", "log", "meal", "today",
+  "medium", "large", "small", "cal", "cals", "calories", "protein", "carb", "carbs", "fat", "grams"
+]);
+
+// Meal names are stored short ("Apple (medium)") while the model often passes a verbose
+// description ("Apple (medium) (95 cal, 0g protein...)"), so matching must work both ways.
+function normalizeForMatch(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\d+\s*(kcal|cal|cals|calories|g|grams|oz|ml)\b/g, " ")
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchScore(nameNorm, descNorm) {
+  if (!nameNorm || !descNorm) return 0;
+  if (nameNorm === descNorm) return 100;
+  if (descNorm.includes(nameNorm) || nameNorm.includes(descNorm)) return 80;
+  const nameTokens = nameNorm.split(" ").filter(t => t.length > 2 && !MATCH_STOPWORDS.has(t));
+  const descTokens = descNorm.split(" ").filter(t => t.length > 2 && !MATCH_STOPWORDS.has(t));
+  if (!nameTokens.length || !descTokens.length) return 0;
+  const descSet = new Set(descTokens);
+  const nameSet = new Set(nameTokens);
+  const nameCoverage = nameTokens.filter(t => descSet.has(t)).length / nameTokens.length;
+  const descCoverage = descTokens.filter(t => nameSet.has(t)).length / descTokens.length;
+  return Math.round(Math.max(nameCoverage, descCoverage) * 70);
+}
+
+// Returns the index of the best matching meal, or -1. Newest entries win ties.
+export function findMealIndex(meals, description) {
+  if (!Array.isArray(meals) || !meals.length) return -1;
+  const descNorm = normalizeForMatch(description);
+  if (/\b(last|latest|previous|recent|that one|it)\b/.test(String(description || "").toLowerCase()) && !descNorm) {
+    return meals.length - 1;
+  }
+  let bestIndex = -1;
+  let bestScore = 0;
+  for (let i = meals.length - 1; i >= 0; i--) {
+    const score = matchScore(normalizeForMatch(meals[i].name), descNorm);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+  if (bestScore >= 35) return bestIndex;
+  if (/\b(last|latest|previous|recent|that|it)\b/.test(String(description || "").toLowerCase())) {
+    return meals.length - 1;
+  }
+  return -1;
+}
+
 export async function processToolCalls(toolCalls, currentMacros, dailyTotalsMap, mealHistoryList) {
   let finalReply = "";
   let newlyLoggedMeals = [];
@@ -176,12 +229,9 @@ export async function processToolCalls(toolCalls, currentMacros, dailyTotalsMap,
       let deletedMeal = null;
       if (dailyTotalsMap[todayStr] && dailyTotalsMap[todayStr].meals) {
          const meals = dailyTotalsMap[todayStr].meals;
-         const descLower = args.description.toLowerCase();
-         for (let i = meals.length - 1; i >= 0; i--) {
-            if (meals[i].name.toLowerCase().includes(descLower)) {
-               deletedMeal = meals.splice(i, 1)[0];
-               break;
-            }
+         const idx = findMealIndex(meals, args.description);
+         if (idx >= 0) {
+            deletedMeal = meals.splice(idx, 1)[0];
          }
       }
       
@@ -197,7 +247,10 @@ export async function processToolCalls(toolCalls, currentMacros, dailyTotalsMap,
          }
       } else {
          if (!finalReply) {
-           finalReply = `I couldn't find a meal matching "${args.description}" today.`;
+           const logged = (dailyTotalsMap[todayStr] && dailyTotalsMap[todayStr].meals || []).map(m => m.name);
+           finalReply = logged.length
+             ? `I couldn't find that one. Today you have: ${logged.join(", ")}. Which should I remove?`
+             : "Nothing is logged today yet, so there's nothing to remove.";
          }
       }
     }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { processToolCalls } from '../chat-core.js';
+import { processToolCalls, findMealIndex, getLocalDateString } from '../chat-core.js';
 
 let dbState = {
   currentMacros: { calories: 0, protein: 0, carbs: 0, fat: 0, date: '2026-07-18' },
@@ -88,7 +88,7 @@ test('Typo correction implicitly handled by LLM before calling tool', async () =
 test('Delete non-existent meal', async () => {
   const mockCalls = [{ function: { name: 'delete_meal', arguments: JSON.stringify({ description: "Pizza" }) } }];
   const res = await processToolCalls(mockCalls, dbState.currentMacros, dbState.dailyTotalsMap, dbState.mealHistoryList);
-  assert.strictEqual(res.finalReply, `I couldn't find a meal matching "Pizza" today.`);
+  assert.match(res.finalReply, /couldn't find|nothing is logged/i);
 });
 
 test('Log meal with no carbs', async () => {
@@ -120,4 +120,50 @@ test('Suggest meal', async () => {
   const res = await processToolCalls(mockCalls, dbState.currentMacros, dbState.dailyTotalsMap, dbState.mealHistoryList);
   assert.strictEqual(res.suggestedMeal.mealName, 'Chicken and Rice');
   assert.match(res.finalReply, /Suggestion: \*\*Chicken and Rice\*\*/);
+});
+
+// Deletion matching: the model passes verbose descriptions while stored names are short.
+test('Delete matches a verbose model description', () => {
+  const meals = [
+    { name: 'Oatmeal', calories: 150 },
+    { name: 'Apple (medium)', calories: 95 }
+  ];
+  assert.strictEqual(findMealIndex(meals, 'Apple (medium) (95 cal, 0g protein, 25g carbs, 0g fat)'), 1);
+});
+
+test('Delete matches a short partial name', () => {
+  const meals = [{ name: 'Grilled Chicken Breast', calories: 280 }];
+  assert.strictEqual(findMealIndex(meals, 'the chicken'), 0);
+});
+
+test('Delete falls back to the most recent meal', () => {
+  const meals = [{ name: 'Oatmeal', calories: 150 }, { name: 'Banana', calories: 105 }];
+  assert.strictEqual(findMealIndex(meals, 'the last thing I logged'), 1);
+});
+
+test('Delete returns no match for an unrelated food', () => {
+  const meals = [{ name: 'Oatmeal', calories: 150 }];
+  assert.strictEqual(findMealIndex(meals, 'pepperoni pizza'), -1);
+});
+
+test('Delete removes the right meal end to end', async () => {
+  const today = getLocalDateString();
+  const state = {
+    currentMacros: { calories: 245, protein: 5, carbs: 52, fat: 3, date: today },
+    dailyTotalsMap: {
+      [today]: {
+        calories: 245,
+        meals: [
+          { name: 'Oatmeal', calories: 150, protein: 5, carbs: 27, fat: 3 },
+          { name: 'Apple (medium)', calories: 95, protein: 0, carbs: 25, fat: 0 }
+        ]
+      }
+    },
+    mealHistoryList: []
+  };
+  const calls = [{ function: { name: 'delete_meal', arguments: JSON.stringify({ description: 'Apple (medium) (95 cal, 0g protein, 25g carbs, 0g fat)' }) } }];
+  const res = await processToolCalls(calls, state.currentMacros, state.dailyTotalsMap, state.mealHistoryList);
+  assert.strictEqual(state.currentMacros.calories, 150);
+  assert.strictEqual(state.dailyTotalsMap[today].meals.length, 1);
+  assert.match(res.finalReply, /removed Apple/i);
 });
