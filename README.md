@@ -33,7 +33,7 @@ Net result: app.js shrank from 3,014 to about 2,500 lines while gaining features
 ## Honest limitations
 
 - Macro estimates are LLM estimates with sanity checks, not a lab. Good enough to steer a week of eating, not for clinical use.
-- Two users in production. This is a portfolio piece and a personal tool, not a startup.
+- Designed, built, and operated solo; live for a small set of real users.
 - Strava sync is wired but off (their API program now requires a paid subscription I no longer keep).
 
 ## Running it
