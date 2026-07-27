@@ -30,7 +30,8 @@ import {
   loadSettingsFromFirestore,
   saveSettingsToFirestore,
   saveStreakData,
-  loadStreakData
+  loadStreakData,
+  getLocalDateString
 } from './firestore-helpers.js';
 
 // Import settings module
@@ -89,13 +90,6 @@ async function initializeApp() {
   }
 }
 
-// Storage (move back to top level)
-const MESSAGES_KEY = "chat-messages-v2";
-const TOTALS_KEY = "nutrition-totals-v2";
-const ACTIVITY_KEY = "activity-data-v1";
-const WEEKLY_DATA_KEY = "weekly-data-v1";
-const DAILY_TOTALS_KEY = "daily-totals-v1";
-const CURRENT_MACROS_KEY = "current-macros-v1";
 
 // DOM
 const form = document.getElementById("form");
@@ -194,7 +188,9 @@ function formatTime(ts) {
 }
 
 function formatDate(dateStr) {
-  const d = new Date(dateStr);
+  // Parse YYYY-MM-DD locally to avoid UTC midnight shifting
+  const [year, month, day] = dateStr.split('-');
+  const d = new Date(year, month - 1, day);
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
@@ -207,147 +203,6 @@ function formatDate(dateStr) {
 
 function getTodayKey() {
   return getLocalDateString(new Date());
-}
-
-/* =========================
-   Macro Validation Layer
-========================= */
-
-/**
- * Replaces incorrect macro numbers in AI response text with corrected values
- * @param {string} originalText - The AI's original response text
- * @param {object} correctedMacros - The validated/corrected macro values
- * @returns {string} - Updated text with corrected numbers
- */
-function replaceMacrosInText(originalText, correctedMacros) {
-  let updatedText = originalText;
-
-  // Target ONLY daily total phrases, not individual meal macros
-  // Pattern: "brings you to X cal, Yg protein, Zg carbs, Wg fat"
-  updatedText = updatedText.replace(
-    /brings you to\s*(\d+)\s*(cal|calories)[,\s]+(\d+)g?\s*protein[,\s]+(\d+)g?\s*(carb|carbs)[,\s]+(?:and\s+)?(\d+)g?\s*fat/gi,
-    `brings you to ${correctedMacros.calories} $2, ${correctedMacros.protein}g protein, ${correctedMacros.carbs}g $5, ${correctedMacros.fat}g fat`
-  );
-
-  // Pattern: "daily total: X cal, Yg protein, Zg carbs, Wg fat"
-  updatedText = updatedText.replace(
-    /daily total:\s*(\d+)\s*(cal|calories)[,\s]+(\d+)g?\s*protein[,\s]+(\d+)g?\s*(carb|carbs)[,\s]+(?:and\s+)?(\d+)g?\s*fat/gi,
-    `daily total: ${correctedMacros.calories} $2, ${correctedMacros.protein}g protein, ${correctedMacros.carbs}g $5, ${correctedMacros.fat}g fat`
-  );
-
-  // Pattern: "X cal, Yg protein, Zg carbs, Wg fat for the day"
-  updatedText = updatedText.replace(
-    /(\d+)\s*(cal|calories)[,\s]+(\d+)g?\s*protein[,\s]+(\d+)g?\s*(carb|carbs)[,\s]+(?:and\s+)?(\d+)g?\s*fat.*?for the day/gi,
-    `${correctedMacros.calories} $2, ${correctedMacros.protein}g protein, ${correctedMacros.carbs}g $5, ${correctedMacros.fat}g fat for the day`
-  );
-
-  // Pattern: "updated daily totals are now X cal, Yg protein..."
-  updatedText = updatedText.replace(
-    /updated daily totals? (?:are|is) now\s*(\d+)\s*(cal|calories)[,\s]+(\d+)g?\s*protein[,\s]+(\d+)g?\s*(carb|carbs)[,\s]+(?:and\s+)?(\d+)g?\s*fat/gi,
-    `updated daily totals are now ${correctedMacros.calories} $2, ${correctedMacros.protein}g protein, ${correctedMacros.carbs}g $5, ${correctedMacros.fat}g fat`
-  );
-
-  return updatedText;
-}
-
-/**
- * Validates macro calculations using the formula:
- * (protein × 4) + (carbs × 4) + (fat × 9) = calories
- *
- * @param {Object} macros - Object with protein, carbs, fat, calories
- * @returns {Object} Validated macros with correction metadata
- */
-function validateAndCorrectMacros(macros) {
-  const { protein, carbs, fat, calories } = macros;
-
-  // Validate all fields present
-  if (protein === undefined || carbs === undefined ||
-      fat === undefined || calories === undefined) {
-    debugError('❌ [MACRO VALIDATION] Missing macro values:', macros);
-    throw new Error('Incomplete macro data - missing one or more values');
-  }
-
-  // Calculate expected calories from macros
-  const calculatedCalories = Math.round(
-    (protein * 4) + (carbs * 4) + (fat * 9)
-  );
-
-  // Check variance
-  const variance = Math.abs(calculatedCalories - calories);
-  const variancePercent = ((variance / calories) * 100).toFixed(1);
-
-  // Log validation details
-  debugLog('🔬 [MACRO VALIDATION] ========================================');
-  debugLog('🔬 Original macros:', macros);
-  debugLog('🔬 Math check: (P×4) + (C×4) + (F×9)');
-  debugLog(`🔬 Calculation: (${protein}×4) + (${carbs}×4) + (${fat}×9) = ${calculatedCalories} cal`);
-  debugLog(`🔬 AI stated: ${calories} cal`);
-  debugLog(`🔬 Variance: ${variance} cal (${variancePercent}%)`);
-
-  // Auto-correct if variance > 10 calories (tolerance for rounding)
-  if (variance > 10) {
-    console.warn(`⚠️ [MACRO VALIDATION] MATH MISMATCH DETECTED!`);
-    console.warn(`⚠️ Difference: ${variance} cal (${variancePercent}%)`);
-    console.warn(`⚠️ Auto-correcting calories from ${calories} to ${calculatedCalories}`);
-
-    return {
-      protein: Math.round(protein),
-      carbs: Math.round(carbs),
-      fat: Math.round(fat),
-      calories: calculatedCalories,
-      _corrected: true,
-      _originalCalories: calories,
-      _variance: variance,
-      _variancePercent: variancePercent
-    };
-  }
-
-  debugLog('✅ [MACRO VALIDATION] Math validated successfully');
-  debugLog('🔬 ========================================');
-
-  // Return validated macros (rounded to whole numbers)
-  return {
-    protein: Math.round(protein),
-    carbs: Math.round(carbs),
-    fat: Math.round(fat),
-    calories: Math.round(calories),
-    _corrected: false
-  };
-}
-
-/**
- * Extracts and validates macros from parsed values
- *
- * @param {Array} match - Regex match array [full, calories, protein, carbs, fat]
- * @param {string} aiMessage - Original AI message for error context
- * @returns {Object} Validated macro object
- */
-function parseAndValidateMacros(match, aiMessage) {
-  if (!match || match.length < 5) {
-    debugError('❌ [MACRO PARSING] Invalid match array:', match);
-    return null;
-  }
-
-  try {
-    // Extract values from regex match
-    // Pattern order: calories, protein, carbs, fat
-    const rawMacros = {
-      calories: parseInt(match[1], 10),
-      protein: parseInt(match[2], 10),
-      carbs: parseInt(match[3], 10),
-      fat: parseInt(match[4], 10)
-    };
-
-    debugLog('📊 [MACRO PARSING] Extracted from AI:', rawMacros);
-
-    // Use raw AI values without correction
-    return rawMacros;
-
-  } catch (error) {
-    debugError('❌ [MACRO PARSING] Failed to parse and validate:', error);
-    debugError('❌ AI message:', aiMessage);
-    throw new Error('Failed to parse macro values from AI response');
-  }
 }
 
 async function loadMessages() {
@@ -417,13 +272,6 @@ function hideTypingIndicator() {
    Streak Tracking
 ========================= */
 
-// Helper function to get today's date in YYYY-MM-DD format in local timezone
-function getLocalDateString(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 async function calculateAndUpdateStreak() {
   debugLog('🔥 ========== CALCULATING STREAK ==========');
@@ -643,9 +491,15 @@ async function renderActivityStats() {
 
   if (!activityContent) return;
 
-  // Check if Strava is connected
-  const { isStravaConnected } = await import('./strava-integration.js');
-  const connected = await isStravaConnected(db, currentUser.uid);
+  // Check if Strava is connected. Best-effort: never throw upward, since a lapsed or
+  // inactive Strava app must not break unrelated UI or look like a connection failure.
+  let connected = false;
+  try {
+    const { isStravaConnected } = await import('./strava-integration.js');
+    connected = await isStravaConnected(db, currentUser.uid);
+  } catch (stravaErr) {
+    console.warn('Strava availability check failed; treating as disconnected:', stravaErr);
+  }
 
   // Show/hide Refresh Strava button
   const refreshStravaBtn = document.getElementById('refreshStravaBtn');
@@ -773,8 +627,9 @@ async function loadWeeklyData() {
     debugLog('📅 [LOAD WEEKLY DATA] Cleaning old format entries...');
 
     // Clean old data (keep only last 7 days AND remove old date format)
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoDate = new Date();
+    sevenDaysAgoDate.setDate(sevenDaysAgoDate.getDate() - 7);
+    const sevenDaysAgo = getLocalDateString(sevenDaysAgoDate);
 
     const cleaned = {};
     let removedCount = 0;
@@ -790,7 +645,7 @@ async function loadWeeklyData() {
       }
 
       // Keep only last 7 days
-      if (new Date(date) >= sevenDaysAgo) {
+      if (date >= sevenDaysAgo) {
         cleaned[date] = value;
       }
     }
@@ -836,8 +691,9 @@ async function loadDailyTotals() {
     debugLog('📥 [LOAD DAILY TOTALS] Keys:', Object.keys(data));
 
     // Clean old data (keep only last 7 days) and migrate old date format
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoDate = new Date();
+    sevenDaysAgoDate.setDate(sevenDaysAgoDate.getDate() - 7);
+    const sevenDaysAgo = getLocalDateString(sevenDaysAgoDate);
 
     const cleaned = {};
     let needsMigration = false;
@@ -1001,7 +857,7 @@ function getWeeklyTotals() {
 
   // Make sure today's activity data is included
   const todayKey = getTodayKey();
-  if (activityData && activityData.date === new Date().toISOString().split('T')[0]) {
+  if (activityData && activityData.date === getLocalDateString()) {
     // Check if today is already in weeklyData
     const todayInWeekly = weeklyData[todayKey];
     if (!todayInWeekly) {
@@ -1210,7 +1066,7 @@ window.renderWeeklySummaryInSettings = function renderWeeklySummaryInSettings() 
       <div class="day-card">
         <div class="day-card__header">
           <h3>${formatDate(day.date)}</h3>
-          <span class="day-card__date">${new Date(day.date).toLocaleDateString()}</span>
+          <span class="day-card__date">${formatDate(day.date)}</span>
         </div>
         <div class="day-card__content">
           ${day.activity ? `
@@ -1310,7 +1166,7 @@ function showWeeklySummary() {
       <div class="day-card">
         <div class="day-card__header">
           <h3>${formatDate(day.date)}</h3>
-          <span class="day-card__date">${new Date(day.date).toLocaleDateString()}</span>
+          <span class="day-card__date">${formatDate(day.date)}</span>
         </div>
         <div class="day-card__content">
           ${day.activity ? `
@@ -1535,8 +1391,48 @@ function renderMessage(msg) {
 
   li.appendChild(text);
   li.appendChild(meta);
+
+  if (msg.role === "assistant" && msg.isProactive) {
+    const actions = document.createElement("div");
+    actions.className = "message__actions";
+    actions.style.marginTop = "8px";
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.innerHTML = `
+      <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;" onclick="rateMessage('${msg.id}', 1)" ${msg.thumbs === 1 ? 'disabled' : ''}>👍 Helpful</button>
+      <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;" onclick="rateMessage('${msg.id}', -1)" ${msg.thumbs === -1 ? 'disabled' : ''}>👎 Not Helpful</button>
+    `;
+    li.appendChild(actions);
+  }
+
   list.appendChild(li);
   debugLog('✅ Message added to DOM');
+}
+
+window.rateMessage = async function(messageId, thumbs) {
+  if (!currentUser) return;
+  try {
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch("/api/rate-message", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`
+      },
+      body: JSON.stringify({ messageId, thumbs })
+    });
+    
+    if (response.ok) {
+      // Update local state and re-render
+      const msgIndex = messages.findIndex(m => m.id === messageId);
+      if (msgIndex !== -1) {
+        messages[msgIndex].thumbs = thumbs;
+        renderAll();
+      }
+    }
+  } catch (err) {
+    console.error("Failed to rate message:", err);
+  }
 }
 
 /* =========================
@@ -1569,12 +1465,23 @@ async function askNutritionAssistant(newUserMessage) {
     history.push({ role: m.role, content: m.text });
   }
 
+  // Get Firebase ID token for auth
+  let idToken = "";
+  if (currentUser) {
+    try {
+      idToken = await currentUser.getIdToken();
+    } catch (e) {
+      console.warn("Failed to get ID token", e);
+    }
+  }
+
   // Call backend /api/chat with structured data
   debugLog('📡 Sending to API - Current macros:', currentMacros);
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${idToken}`
     },
     body: JSON.stringify({
       messages: history,
@@ -1742,166 +1649,14 @@ form.addEventListener("submit", async (e) => {
 
   debugLog('📝 User message:', value);
 
-  // 🗑️ CHECK FOR DELETION REQUEST (detect directly from user input)
-  const deletionWords = ['remove', 'delete', 'take off', 'get rid'];
-  const lowerValue = value.toLowerCase();
-  const isDeletion = deletionWords.some(word => lowerValue.includes(word));
-
-  if (isDeletion) {
-    debugLog('🗑️ DELETION REQUEST DETECTED');
-
-    // Extract item name (get text after deletion keyword)
-    let itemName = '';
-    for (const word of deletionWords) {
-      if (lowerValue.includes(word)) {
-        const startIndex = lowerValue.indexOf(word) + word.length;
-        itemName = lowerValue.substring(startIndex)
-          // Remove filler words from start
-          .replace(/^(the|that|my|all|some|every|each)?\s+/, '')
-          .replace(/^(the|that|my|all|some|every|each)?\s+/, '') // Run twice for compound phrases
-          // Remove common phrases
-          .replace(/instances?\s+of\s+/gi, '')
-          .replace(/\s+from\s+(my\s+)?(day|today|tonight|earlier|breakfast|lunch|dinner)$/i, '')
-          .replace(/\s+for\s+(the\s+)?(day|today)$/i, '')
-          // Remove trailing clarification phrases
-          .replace(/\s+(i|we)\s+(mention(ed)?|said|ate|had|logged|talked about|discussed)$/i, '')
-          .replace(/\s+that\s+(i|we)\s+(mention(ed)?|said|ate|had|logged|talked about|discussed)$/i, '')
-          .replace(/please$/i, '')
-          .trim();
-        break;
-      }
-    }
-
-    debugLog('🗑️ Searching for:', itemName);
-
-    const today = getTodayKey();
-    const meals = dailyTotals[today]?.meals || [];
-    debugLog('🗑️ Total meals today:', meals.length);
-    debugLog('🗑️ Meal descriptions:', meals.map(m => m.description));
-
-    // Find ALL meals containing this item
-    let deletedCount = 0;
-    for (let i = meals.length - 1; i >= 0; i--) {
-      if (itemName && meals[i].description.toLowerCase().includes(itemName)) {
-        debugLog('🗑️ Found meal to delete:', meals[i]);
-
-        // Find AI response for this meal to get macros
-        // Match the exact user message that created this meal
-        for (let j = messages.length - 1; j >= 0; j--) {
-          if (messages[j].role === 'user' && messages[j].text === meals[i].description) {
-            debugLog('🗑️ Matched user message:', messages[j].text);
-            if (j + 1 < messages.length && messages[j + 1].role === 'assistant') {
-              const aiText = messages[j + 1].text;
-              debugLog('🗑️ Checking AI response for macros:', aiText.substring(0, 100));
-              // Remove bold markers (**) before matching
-              const cleanedText = aiText.replace(/\*\*/g, '');
-              const macroMatch = cleanedText.match(/(\d+)\s*cal[,\s]+(\d+)g?\s*protein[,\s]+(\d+)g?\s*carbs?[,\s]+(?:and\s+)?(\d+)g?\s*fat/i);
-
-              if (macroMatch) {
-                const rawMacros = {
-                  calories: parseInt(macroMatch[1]),
-                  protein: parseInt(macroMatch[2]),
-                  carbs: parseInt(macroMatch[3]),
-                  fat: parseInt(macroMatch[4])
-                };
-
-                debugLog('🗑️ Extracted macros (raw AI values):', rawMacros);
-
-                // Use raw values without correction
-                const macros = rawMacros;
-
-                currentMacros.calories = Math.max(0, currentMacros.calories - macros.calories);
-                currentMacros.protein = Math.max(0, currentMacros.protein - macros.protein);
-                currentMacros.carbs = Math.max(0, currentMacros.carbs - macros.carbs);
-                currentMacros.fat = Math.max(0, currentMacros.fat - macros.fat);
-
-                meals.splice(i, 1);
-                dailyTotals[today].calories = currentMacros.calories;
-
-                deletedCount++;
-                debugLog(`✅ DELETED ${deletedCount}! New totals:`, currentMacros);
-                break; // Found macros for this meal, move to next meal
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // If we deleted anything, save and show confirmation
-    if (deletedCount > 0) {
-      await saveCurrentMacros(currentMacros);
-      await saveDailyTotals();
-      await updateMacrosSidebar(currentMacros);
-
-      // Add user's deletion request to chat
-      const userMsg = { role: "user", text: value, time: Date.now() };
-      messages.push(userMsg);
-      saveMessages();
-      renderMessage(userMsg);
-
-      // Show confirmation
-      const itemText = deletedCount === 1 ? itemName : `all ${deletedCount} ${itemName}`;
-      const confirmMsg = {
-        role: "assistant",
-        text: `Got it, removed ${itemText}!`,
-        time: Date.now()
-      };
-      messages.push(confirmMsg);
-      saveMessages();
-      renderMessage(confirmMsg);
-      scrollToBottom();
-
-      // Clear input field
-      input.value = "";
-      autogrow(input);
-
-      return; // Exit without calling AI
-    }
-
-    if (deletedCount === 0) {
-      debugLog('⚠️ Could not find meal to delete');
-      debugLog('⚠️ Searched for:', itemName);
-      debugLog('⚠️ Available meals:', meals.map(m => m.description).join(', '));
-
-      // Show helpful message to user
-      const userMsg = { role: "user", text: value, time: Date.now() };
-      messages.push(userMsg);
-      saveMessages();
-      renderMessage(userMsg);
-
-      const availableMeals = meals.length > 0
-        ? `I couldn't find "${itemName}" in your logged meals. You have: ${meals.map(m => m.description).join(', ')}`
-        : `I couldn't find "${itemName}" - you haven't logged any meals today yet.`;
-
-      const errorMsg = {
-        role: "assistant",
-        text: availableMeals,
-        time: Date.now()
-      };
-      messages.push(errorMsg);
-      saveMessages();
-      renderMessage(errorMsg);
-      scrollToBottom();
-
-      input.value = "";
-      autogrow(input);
-
-      return; // Don't call AI
-    }
-  }
-
-  // Track last user message for meal history
+  // Track last user message for meal history contexts if needed
   lastUserMessage = value;
 
   const sendBtn = document.getElementById('sendBtn');
-
-  // Disable send button and update text
   sendBtn.disabled = true;
   sendBtn.textContent = 'Sending...';
   input.disabled = true;
 
-  // Hide empty chat state if showing
   hideEmptyChatState();
 
   const userMsg = { role: "user", text: value, time: Date.now() };
@@ -1910,168 +1665,47 @@ form.addEventListener("submit", async (e) => {
   renderMessage(userMsg);
   scrollToBottom();
 
-  // Note: We don't add to meal history here anymore.
-  // Meals are only added when AI successfully parses macros (see below)
-
   input.value = "";
   autogrow(input);
 
-  // Show typing indicator
   showTypingIndicator();
 
   try {
-    debugLog('🤖 Calling AI...');
-    const response = await askNutritionAssistant(value);
-    debugLog('✅ AI RESPONSE:', response);
+    debugLog('🤖 Calling API /api/chat...');
+    
+    // We send the whole messages history in OpenAI format
+    const formattedMessages = messages.map(m => ({
+      role: m.role,
+      content: m.text
+    }));
 
-    // Remove typing indicator
-    hideTypingIndicator();
+    const idToken = await currentUser.getIdToken(true);
+    
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`
+      },
+      body: JSON.stringify({
+        messages: formattedMessages
+      })
+    });
 
-    // Parse and validate macros FIRST (before displaying message)
-    debugLog('📊 Attempting to parse daily totals from response...');
-    debugLog('📊 AI message (original):', response.message);
-
-    // Strip markdown formatting before parsing (handles **1850** → 1850)
-    const cleanMessage = response.message.replace(/\*\*/g, '');
-    debugLog('📊 AI message (cleaned):', cleanMessage);
-
-    // 🗑️ CHECK FOR DELETION
-    if (cleanMessage.includes('[DELETE:')) {
-      const match = cleanMessage.match(/\[DELETE:(.+?)\]/);
-      if (match) {
-        const itemToDelete = match[1].toLowerCase();
-        debugLog('🗑️ DELETION:', itemToDelete);
-
-        const today = getTodayKey();
-        const meals = dailyTotals[today]?.meals || [];
-
-        // Find most recent meal containing this item
-        for (let i = meals.length - 1; i >= 0; i--) {
-          if (meals[i].description.toLowerCase().includes(itemToDelete)) {
-            debugLog('🗑️ Found meal to delete:', meals[i]);
-
-            // Find the AI response for this meal to get macros
-            for (let j = messages.length - 1; j >= 0; j--) {
-              if (messages[j].role === 'user' && messages[j].text.includes(meals[i].description.substring(0, 20))) {
-                if (j + 1 < messages.length && messages[j + 1].role === 'assistant') {
-                  const aiText = messages[j + 1].text;
-                  const macroMatch = aiText.match(/(\d+)\s*cal[,\s]+(\d+)g?\s*protein[,\s]+(\d+)g?\s*carbs?[,\s]+(?:and\s+)?(\d+)g?\s*fat/i);
-
-                  if (macroMatch) {
-                    const macros = {
-                      calories: parseInt(macroMatch[1]),
-                      protein: parseInt(macroMatch[2]),
-                      carbs: parseInt(macroMatch[3]),
-                      fat: parseInt(macroMatch[4])
-                    };
-
-                    debugLog('🗑️ Subtracting:', macros);
-
-                    // Subtract from current
-                    currentMacros.calories = Math.max(0, currentMacros.calories - macros.calories);
-                    currentMacros.protein = Math.max(0, currentMacros.protein - macros.protein);
-                    currentMacros.carbs = Math.max(0, currentMacros.carbs - macros.carbs);
-                    currentMacros.fat = Math.max(0, currentMacros.fat - macros.fat);
-
-                    // Remove from meals
-                    meals.splice(i, 1);
-                    dailyTotals[today].calories = currentMacros.calories;
-
-                    // Save
-                    await saveCurrentMacros(currentMacros);
-                    await saveDailyTotals();
-                    await updateMacrosSidebar(currentMacros);
-
-                    debugLog('✅ Deleted! New totals:', currentMacros);
-                  }
-                  break;
-                }
-              }
-            }
-            break;
-          }
-        }
-
-        // Show message without the [DELETE:...] part
-        const displayMsg = cleanMessage.replace(/\[DELETE:.+?\]/, '').trim();
-        const formatted = formatAIResponse(displayMsg);
-        messages.push({ role: "assistant", text: formatted, time: Date.now() });
-        saveMessages();
-        renderMessage(messages[messages.length - 1]);
-        scrollToBottom();
+    if (!response.ok) {
+      if (response.status === 401) {
+        window.location.href = '/auth';
         return;
       }
+      throw new Error(`Server error: ${response.status}`);
     }
 
-    // 🚫 DON'T parse macros if user is asking a question or requesting a recap
-    // This prevents double-counting when AI lists what they already ate
-    const isQuestion = value.includes('?');
-    const isRecapRequest = /what (did|have) i (eat|ate|have|had)|show me|list|recap|summary|tell me what/i.test(value);
-
-    if (isQuestion || isRecapRequest) {
-      debugLog('📊 Skipping macro parsing - user asked a question or requested recap');
-
-      // Just show the AI response without parsing macros
-      const formatted = formatAIResponse(cleanMessage);
-      messages.push({ role: "assistant", text: formatted, time: Date.now() });
-      saveMessages();
-      renderMessage(messages[messages.length - 1]);
-      scrollToBottom();
-      return;
-    }
-
-    // Use global regex to find ALL food items in the response
-    const macroPattern = /(\d+)\s*cal[,\s]+(\d+)g?\s*protein[,\s]+(\d+)g?\s*carbs?[,\s]+(?:and\s+)?(\d+)g?\s*fat/gi;
-    const allMatches = [...cleanMessage.matchAll(macroPattern)];
-
-    debugLog(`📊 Found ${allMatches.length} food items in AI response`);
-
-    if (allMatches.length > 0) {
-      debugLog('📊 ========== UPDATING MACROS FROM PARSED RESPONSE ==========');
-      debugLog('📊 Current macros BEFORE:', JSON.stringify(currentMacros));
-
-      // Sum up ALL food items
-      let totalCalories = 0;
-      let totalProtein = 0;
-      let totalCarbs = 0;
-      let totalFat = 0;
-
-      allMatches.forEach((match, index) => {
-        const itemMacros = {
-          calories: parseInt(match[1]),
-          protein: parseInt(match[2]),
-          carbs: parseInt(match[3]),
-          fat: parseInt(match[4])
-        };
-
-        debugLog(`📊 Food item ${index + 1}:`, itemMacros);
-
-        totalCalories += itemMacros.calories;
-        totalProtein += itemMacros.protein;
-        totalCarbs += itemMacros.carbs;
-        totalFat += itemMacros.fat;
-      });
-
-      debugLog('📊 ========== TOTAL FROM ALL FOOD ITEMS ==========');
-      debugLog(`📊 Total: ${totalCalories} cal, ${totalProtein}g protein, ${totalCarbs}g carbs, ${totalFat}g fat`);
-
-      // Create combined macros object
-      const parsedMacros = {
-        calories: totalCalories,
-        protein: totalProtein,
-        carbs: totalCarbs,
-        fat: totalFat
-      };
-
-      // Use raw AI values without correction
-      const validatedMacros = parsedMacros;
-
-      debugLog('📊 Total macros (raw AI values):', JSON.stringify(validatedMacros));
-
-      // Format and display the message
-      const formattedText = formatAIResponse(response.message);
-      debugLog('📝 FORMATTED MESSAGE:', formattedText);
-
+    const data = await response.json();
+    hideTypingIndicator();
+    
+    // Render AI reply
+    if (data.reply) {
+      const formattedText = formatAIResponse(data.reply);
       messages.push({
         role: "assistant",
         text: formattedText,
@@ -2080,200 +1714,70 @@ form.addEventListener("submit", async (e) => {
       saveMessages();
       renderMessage(messages[messages.length - 1]);
       scrollToBottom();
-
-      // ⭐ CHECK IF IT'S A NEW DAY - Reset macros if date has changed
+    }
+    
+    // Update authoritative totals in UI directly from server payload
+    if (data.totals) {
+      currentMacros = data.totals;
+      await updateMacrosSidebar(currentMacros);
+      
+      // Update the daily totals map in memory so UI reflects it
       const today = getTodayKey();
-      const isNewDay = !currentMacros.date || currentMacros.date !== today;
-
-      debugLog('📅 [DATE CHECK] Current stored date:', currentMacros.date);
-      debugLog('📅 [DATE CHECK] Today\'s date:', today);
-      debugLog('📅 [DATE CHECK] Is new day?', isNewDay);
-
-      if (isNewDay) {
-        debugLog('🌅 [NEW DAY DETECTED] Resetting macros to 0 before adding new meal');
-        currentMacros = {
-          calories: 0,
-          protein: 0,
-          carbs: 0,
-          fat: 0,
-          date: today
-        };
-      }
-
-      // ADD the meal macros to currentMacros (running daily total)
-      debugLog('📊 Current macros BEFORE adding meal:', JSON.stringify(currentMacros));
-      debugLog('🍽️ Meal macros to add:', JSON.stringify(validatedMacros));
-
-      currentMacros.calories += validatedMacros.calories;
-      currentMacros.protein += validatedMacros.protein;
-      currentMacros.carbs += validatedMacros.carbs;
-      currentMacros.fat += validatedMacros.fat;
-      currentMacros.date = today;
-
-      debugLog('📊 Current macros AFTER adding meal:', JSON.stringify(currentMacros));
-
-      // ⭐ CRITICAL FIX: Update dailyTotals.calories so History tab works
-      // (today variable already declared above in new day check)
       if (!dailyTotals[today]) {
         dailyTotals[today] = { calories: 0, meals: [] };
       }
       dailyTotals[today].calories = currentMacros.calories;
-      debugLog('📊 ✅ Updated dailyTotals[today].calories to:', currentMacros.calories);
-
-      // ⭐ ADD MEAL TO HISTORY: Only add when AI successfully parsed macros
-      const mealEntry = {
-        description: value, // The user's original message
-        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      };
-      dailyTotals[today].meals.push(mealEntry);
-      debugLog('🍽️ ✅ Added meal to history:', mealEntry);
-      debugLog('📊 dailyTotals[today] is now:', dailyTotals[today]);
-
-      // Save to Firestore
-      await saveCurrentMacros(currentMacros);
-
-      // Update daily totals (now includes updated calories)
-      await saveDailyTotals();
-
-      // Update UI
-      await updateMacrosSidebar(currentMacros);
-      debugLog('✅ ========== MACROS UPDATED SUCCESSFULLY ==========');
-    } else {
-      console.warn('⚠️ ========== NO PATTERN MATCHED ==========');
-      console.warn('⚠️ Could not extract daily totals from AI response');
-      console.warn('⚠️ This might be an educational/non-tracking message');
-      console.warn('⚠️ Displaying message without tracking macros...');
-
-      // Display the message even if we can't parse macros (for educational responses)
-      const formattedText = formatAIResponse(response.message);
-      messages.push({
-        role: "assistant",
-        text: formattedText,
-        time: Date.now()
-      });
-      saveMessages();
-      renderMessage(messages[messages.length - 1]);
-      scrollToBottom();
+      
+      // Add the new meals to our in-memory history if there are any
+      if (data.meals && data.meals.length > 0) {
+        for (const item of data.meals) {
+          dailyTotals[today].meals.push({
+            ...item,
+            description: value,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+      
+      // NOTE: We DO NOT call saveCurrentMacros or saveDailyTotals or saveMealHistory here.
+      // The server already wrote them to Firestore via the Admin SDK. 
+      // We only update our local memory and UI so it reflects the backend truth.
+      // UI refresh is best-effort. A failure here (for example Strava being unavailable)
+      // must never surface as a connection error, because the meal is already saved.
+      try {
+        await renderActivityStats();
+        await renderWeeklyTotals();
+        await calculateAndUpdateStreak();
+        checkStreak();
+      } catch (uiErr) {
+        console.warn('Post-log UI refresh failed (the log itself was saved):', uiErr);
+      }
     }
-
+    
   } catch (err) {
-    console.error('❌ OpenAI API Error:', err);
+    console.error('❌ Error during chat:', err);
     hideTypingIndicator();
-
-    // Show friendly error message with details
-    const errorDetail = err.message || 'Unknown error';
-    showErrorToast('Error: ' + errorDetail);
-
-    messages.push({
-      role: "assistant",
-      text: "I'm having trouble connecting right now. Please try again in a moment.",
-      time: Date.now()
-    });
+    
+    const errorMsg = { 
+      role: "assistant", 
+      text: "⚠️ I'm having trouble connecting right now. Please try again.", 
+      time: Date.now(),
+      isError: true
+    };
+    messages.push(errorMsg);
     saveMessages();
-    renderMessage(messages[messages.length - 1]);
+    renderMessage(errorMsg);
     scrollToBottom();
   } finally {
-    // Re-enable send button
     sendBtn.disabled = false;
-    sendBtn.textContent = 'Send';
+    sendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
     input.disabled = false;
     input.focus();
   }
 });
 
 /* =========================
-   Reset & Export
-========================= */
-
-async function resetToday() {
-  const ok = await showConfirmModal(
-    'Reset Today\'s Data',
-    'This will permanently delete today\'s chat history and nutrition tracking. This cannot be undone.'
-  );
-  if (!ok) return;
-
-  // Clear today's messages
-  messages = [];
-  saveMessages();
-
-  // Clear today's nutrition totals
-  const today = getTodayKey();
-  if (dailyTotals[today]) {
-    delete dailyTotals[today];
-    saveDailyTotals();
-  }
-
-  // Clear current macros
-  currentMacros = { calories: 0, protein: 0, carbs: 0, fat: 0, date: getTodayKey() };
-  saveCurrentMacros(currentMacros);
-  updateMacrosSidebar(currentMacros);
-
-  renderAll();
-  renderWeeklyTotals();
-}
-
-function exportAsText() {
-  let text = "Nutrition Chat Export\n";
-  text += "=" + "=".repeat(50) + "\n\n";
-  text += `Export Date: ${new Date().toLocaleString()}\n\n`;
-
-  // Today's Activity Stats
-  text += "Today's Activity:\n";
-  text += `-----------------\n`;
-  text += `Steps: ${activityData.steps.toLocaleString()}\n`;
-  text += `Calories Burned: ${activityData.caloriesBurned}\n`;
-  text += `Active Minutes: ${activityData.activeMinutes}\n\n`;
-
-  // Chat history
-  text += "Chat History:\n";
-  text += "-------------\n\n";
-
-  messages.forEach(msg => {
-    const role = msg.role === "user" ? "You" : "AI";
-    const time = formatTime(msg.time);
-    text += `[${time}] ${role}:\n`;
-    text += `${msg.text}\n\n`;
-  });
-
-  // Weekly totals
-  const totals = getWeeklyTotals();
-  text += "\nWeekly Summary:\n";
-  text += "---------------\n";
-  text += `Total Consumed: ${totals.consumed} calories\n`;
-  text += `Total Burned: ${totals.burned} calories\n`;
-
-  // Download
-  const blob = new Blob([text], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `nutrition-chat-${new Date().toISOString().split('T')[0]}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportAsJSON() {
-  const exportData = {
-    exportDate: new Date().toISOString(),
-    todayActivity: activityData,
-    messages: messages,
-    dailyTotals: dailyTotals,
-    weeklyData: weeklyData,
-    weeklyTotals: getWeeklyTotals()
-  };
-
-  const json = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `nutrition-data-${new Date().toISOString().split('T')[0]}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-/* =========================
-   Other events
+   Event Listeners
 ========================= */
 
 input.addEventListener("input", () => autogrow(input));

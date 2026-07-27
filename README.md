@@ -1,28 +1,49 @@
-# EatTailor - AI Nutrition Tracking App
+# EatTailor
 
-A full-stack nutrition tracking application that uses AI to solve the data accuracy problems in existing market solutions.
+An AI nutrition coach you talk to instead of a database you search. Built December 2025, rebuilt July 2026 with an overnight AI agent pipeline.
 
-## The Problem
+**Live demo:** https://erics-mac-mini.tail6938d5.ts.net (yes, it runs on a Mac mini in my apartment)
 
-Existing nutrition apps (MyFitnessPal, Lose It, etc.) struggle with real-world food logging. Users either get inaccurate macro estimates or spend excessive time manually searching databases.
+## The idea
 
-## The Solution
+Nutrition apps make you do the work: scan barcodes, search databases, guess serving sizes. EatTailor flips it. You say "had two slices of Costco pepperoni pizza" and the app logs it, estimates macros, and updates your day. Guidance over tracking.
 
-EatTailor uses a 4-layer AI prompt logic system to improve macro estimation accuracy:
+## What it does
 
-1. **Food Parsing** - Natural language processing to identify ingredients from casual food descriptions
-2. **Portion Normalization** - Converts vague portions ("a handful," "medium bowl") into standardized measurements  
-3. **Macro Calculation** - Generates macronutrient estimates with confidence scoring
-4. **Cross-Validation** - Checks calculations against nutritional baselines to catch outliers
+- **Conversational logging.** Natural language in, structured meal data out. No barcodes, no database search.
+- **Structured tool loop.** The model does not free-text guess into the UI. It calls typed tools (log_meal, delete_meal, suggest_meal, answer_question) and the server is the single writer to the database. The client renders state; it never parses AI prose with regexes. (v1 did. It was a mistake. See below.)
+- **Training-aware coaching.** Strava integration feeds workout context into every chat turn, so advice accounts for what you actually did today. Currently dormant in production; workouts can be logged by typing them.
+- **Proactive briefs.** A 6am morning brief and evening close-out, generated server-side on a schedule. Built, tested, and switched off by config, because it turns out I do not want my nutrition app texting me at 6am. The feature exists; the off switch is the product decision.
 
-## Tech Stack
+## Stack
 
-- **Frontend:** HTML, CSS, JavaScript (PWA-enabled)
-- **Backend:** Node.js
-- **AI:** OpenAI API
-- **Auth/Database:** Firebase (Google Sign-In, Firestore)
-- **Integrations:** Strava API
+- Vanilla JS PWA frontend, no framework
+- Node.js / Express backend
+- OpenAI API (structured tool calls, not prose parsing)
+- Firebase Auth (Google sign-in) + Firestore, per-user security rules
+- Strava OAuth + webhook (dormant)
+- Hosted on a Mac mini behind a Tailscale Funnel. Hosting cost: zero dollars.
 
-## Why I Built This
+## The rebuild story
 
-I wanted to demonstrate hands-on AI development beyond using ChatGPT as a writing tool. This project showcases prompt engineering, API integration, and product thinking applied to a real user problem.
+The December 2025 version worked as a demo but had a classic LLM app flaw: the AI answered in prose and the client scraped macros out of it with three different regexes. Deleting a meal relied on the model emitting a magic `[DELETE:...]` marker. It worked until it did not.
+
+The July 2026 rebuild ran as scoped overnight sprints executed by AI coding agents, with each sprint reviewed against the actual diff before the next one fired. Sprint reviews caught real failures the agents reported as done: a scheduler that was written but never wired into the server, client regexes that were supposed to be deleted and were not, a dual-writer race between client and server. Each got a targeted fix sprint and a re-review.
+
+Net result: app.js shrank from 3,014 to about 2,500 lines while gaining features, the server became the only writer, and the chat core became a 215-line module with its own test suite.
+
+## Honest limitations
+
+- Macro estimates are LLM estimates with sanity checks, not a lab. Good enough to steer a week of eating, not for clinical use.
+- Two users in production. This is a portfolio piece and a personal tool, not a startup.
+- Strava sync is wired but off (their API program now requires a paid subscription I no longer keep).
+
+## Running it
+
+```
+npm install
+cp .env.example .env   # add your own keys
+node server.js
+```
+
+Requires a Firebase project (Auth + Firestore), an OpenAI API key, and optionally Strava API credentials.

@@ -4,12 +4,48 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 dotenv.config();
+import { processToolCalls, getLocalDateString, buildSystemPrompt, getChatTools } from "./chat-core.js";
+import { fetchStravaActivities, getStravaContext } from "./strava-helper.js";
+
+import { initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+
+process.env.GOOGLE_APPLICATION_CREDENTIALS = new URL('./service-account.json', import.meta.url).pathname;
+initializeApp({
+  projectId: "eattailor"
+});
+
+const db = getFirestore();
+const auth = getAuth();
+
+// Authentication middleware
+async function verifyIdToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Missing or invalid authorization header" });
+  }
+
+  const idToken = authHeader.split("Bearer ")[1];
+  try {
+    const decodedToken = await auth.verifyIdToken(idToken);
+    req.user = decodedToken;
+    next();
+  } catch (error) {
+    console.error("Error verifying Firebase ID token:", error);
+    res.status(401).json({ error: "Unauthorized" });
+  }
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
+
+if (process.env.ENABLE_PROACTIVE_CRON !== 'false') {
+  import('./cron.js').catch(err => console.error('Failed to load cron.js', err));
+}
 
 // Serve static files from the project directory
 app.use(express.static(__dirname));
@@ -100,7 +136,7 @@ app.get("/api/strava/callback", async (req, res) => {
             console.log('📨 Sending message:', messageData);
 
             if (window.opener) {
-              window.opener.postMessage(messageData, '*');
+              window.opener.postMessage(messageData, '${req.protocol}://${req.get('host')}');
               console.log('✅ Message sent to opener!');
               setTimeout(() => {
                 console.log('🔒 Closing popup...');
@@ -122,7 +158,7 @@ app.get("/api/strava/callback", async (req, res) => {
 });
 
 // Strava API - Fetch today's activities
-app.post("/api/strava/activities", async (req, res) => {
+app.post("/api/strava/activities", verifyIdToken, async (req, res) => {
   try {
     const { accessToken, refreshToken, expiresAt } = req.body;
 
@@ -130,218 +166,14 @@ app.post("/api/strava/activities", async (req, res) => {
       return res.status(400).json({ error: "Missing access token" });
     }
 
-    let currentAccessToken = accessToken;
-
-    // Check if token is expired and refresh if needed
-    if (Date.now() / 1000 > expiresAt) {
-      const refreshResponse = await fetch("https://www.strava.com/oauth/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_id: process.env.STRAVA_CLIENT_ID,
-          client_secret: process.env.STRAVA_CLIENT_SECRET,
-          grant_type: "refresh_token",
-          refresh_token: refreshToken
-        })
-      });
-
-      if (refreshResponse.ok) {
-        const newTokens = await refreshResponse.json();
-        currentAccessToken = newTokens.access_token;
-        // Return new tokens to update in Firestore
-        res.newTokens = {
-          accessToken: newTokens.access_token,
-          refreshToken: newTokens.refresh_token,
-          expiresAt: newTokens.expires_at
-        };
-      }
-    }
-
-    // Fetch activities from last 7 days for "This Week" display
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
-    const timestamp = Math.floor(sevenDaysAgo.getTime() / 1000);
-
-    console.log('📅 [DATE DEBUG] ========== DATE FILTERING ==========');
-    console.log('📅 [DATE DEBUG] Server time:', now.toString());
-    console.log('📅 [DATE DEBUG] Fetching activities from last 7 days');
-    console.log('📅 [DATE DEBUG] Fetching activities after:', sevenDaysAgo.toString());
-
-    const activitiesResponse = await fetch(
-      `https://www.strava.com/api/v3/athlete/activities?after=${timestamp}&per_page=50`,
-      {
-        headers: {
-          Authorization: `Bearer ${currentAccessToken}`
-        }
-      }
-    );
-
-    if (!activitiesResponse.ok) {
-      const error = await activitiesResponse.text();
-      console.error("Strava activities fetch failed:", error);
-      return res.status(500).json({ error: "Failed to fetch activities" });
-    }
-
-    const activities = await activitiesResponse.json();
-
-    console.log('🔍 [STRAVA DEBUG] ========== RAW API RESPONSE ==========');
-    console.log('🔍 [STRAVA DEBUG] Number of activities returned:', activities.length);
-
-    // Log each activity's date and compare to today
-    activities.forEach((activity, index) => {
-      const activityDate = new Date(activity.start_date);
-      const activityLocalDate = activityDate.toLocaleDateString();
-      const todayLocalDate = new Date().toLocaleDateString();
-
-      console.log(`🔍 [ACTIVITY ${index + 1} DATE CHECK]`);
-      console.log(`  - Name: ${activity.name}`);
-      console.log(`  - Type: ${activity.type}`);
-      console.log(`  - Start date (raw): ${activity.start_date}`);
-      console.log(`  - Start date (parsed): ${activityDate.toString()}`);
-      console.log(`  - Activity date (local): ${activityLocalDate}`);
-      console.log(`  - Today date (local): ${todayLocalDate}`);
-      console.log(`  - Is today?: ${activityLocalDate === todayLocalDate}`);
-      console.log(`  - Calories: ${activity.calories || 'N/A'}`);
-      console.log(`  - Kilojoules: ${activity.kilojoules || 'N/A'}`);
+    const { activities, totalCalories, newTokens } = await fetchStravaActivities({
+      accessToken, refreshToken, expiresAt
     });
-
-    if (activities.length > 0) {
-      console.log('🔍 [STRAVA DEBUG] Full first activity object:', JSON.stringify(activities[0], null, 2));
-    }
-
-    // Log ALL activity types to help debug missing types
-    console.log('📋 [STRAVA DEBUG] All activity types returned from Strava:');
-    const uniqueTypes = [...new Set(activities.map(a => a.type))];
-    uniqueTypes.forEach(type => {
-      const count = activities.filter(a => a.type === type).length;
-      console.log(`  - ${type}: ${count} activity(ies)`);
-    });
-
-    // Filter to only include real workouts (not all-day activity tracking)
-    // Workout types that should be counted
-    const WORKOUT_TYPES = [
-      // Cardio
-      'Run', 'Ride', 'Swim', 'Walk', 'Hike', 'VirtualRide', 'VirtualRun',
-      'Elliptical', 'StairStepper', 'Rowing', 'EBikeRide',
-
-      // Strength & Fitness
-      'Workout', 'WeightTraining', 'Crossfit', 'HIIT', 'Pilates',
-
-      // Mind-Body
-      'Yoga', 'Meditation', 'Stretching',
-
-      // Climbing
-      'RockClimbing', 'Climbing', 'Bouldering', 'SportClimbing', 'TraditionalClimbing',
-
-      // Winter Sports
-      'IceSkate', 'InlineSkate', 'AlpineSki', 'BackcountrySki', 'NordicSki',
-      'Snowboard', 'Snowshoe', 'IceHockey',
-
-      // Water Sports
-      'Kayaking', 'Canoeing', 'Surfing', 'Windsurf', 'Kitesurf',
-      'StandUpPaddling', 'Sailing', 'Swimming',
-
-      // Racquet Sports
-      'Tennis', 'Pickleball', 'Badminton', 'Squash', 'TableTennis', 'Racquetball',
-
-      // Team Sports
-      'Soccer', 'Basketball', 'Football', 'Volleyball', 'Baseball', 'Softball',
-      'Hockey', 'Lacrosse', 'Rugby', 'Cricket',
-
-      // Other Sports
-      'Golf', 'Boxing', 'MartialArts', 'Dance', 'Gymnastics',
-      'Handcycle', 'Skateboard', 'RollerSki'
-    ];
-
-    const workouts = activities.filter(activity => {
-      const isWorkoutType = WORKOUT_TYPES.includes(activity.type);
-      // Lower threshold to 25 calories to include lower-intensity workouts
-      const hasCaloriesBurned = (activity.calories && activity.calories > 25) ||
-                                (activity.kilojoules && activity.kilojoules > 25);
-      // Also include if it has moving time over 5 minutes (300 seconds)
-      const hasMovingTime = activity.moving_time && activity.moving_time > 300;
-
-      // Debug logging for each activity
-      console.log(`\n🔍 [FILTER CHECK] Activity: ${activity.name}`);
-      console.log(`  - Type: ${activity.type}`);
-      console.log(`  - Is workout type? ${isWorkoutType}`);
-      console.log(`  - Calories: ${activity.calories || 'N/A'}`);
-      console.log(`  - Kilojoules: ${activity.kilojoules || 'N/A'}`);
-      console.log(`  - Moving time: ${activity.moving_time ? `${Math.round(activity.moving_time / 60)}min` : 'N/A'}`);
-      console.log(`  - Has enough calories? ${hasCaloriesBurned}`);
-      console.log(`  - Has moving time? ${hasMovingTime}`);
-      console.log(`  - INCLUDED? ${isWorkoutType && (hasCaloriesBurned || hasMovingTime) ? 'YES ✅' : 'NO ❌'}`);
-
-      return isWorkoutType && (hasCaloriesBurned || hasMovingTime);
-    });
-
-    console.log(`🔍 [STRAVA DEBUG] Filtered to ${workouts.length} workouts (from ${activities.length} activities)`);
-
-    // Show what was excluded
-    const excluded = activities.filter(a => !workouts.includes(a));
-    if (excluded.length > 0) {
-      console.log(`⏭️ [STRAVA DEBUG] Excluded ${excluded.length} activities:`);
-      excluded.forEach((activity, index) => {
-        const calories = activity.calories || (activity.kilojoules ? Math.round(activity.kilojoules * 0.239) : 0);
-        console.log(`  - ${activity.name} (${activity.type}): ${calories} cal`);
-      });
-    }
-
-    // Calculate total calories burned from WORKOUTS ONLY
-    let totalCalories = 0;
-    workouts.forEach((activity, index) => {
-      console.log(`🔍 [WORKOUT ${index + 1}] Name: ${activity.name}`);
-      console.log(`🔍 [WORKOUT ${index + 1}] Type: ${activity.type}`);
-      console.log(`🔍 [WORKOUT ${index + 1}] Start: ${activity.start_date}`);
-      console.log(`🔍 [WORKOUT ${index + 1}] Calories field: ${activity.calories}`);
-      console.log(`🔍 [WORKOUT ${index + 1}] Kilojoules field: ${activity.kilojoules}`);
-
-      if (activity.calories) {
-        console.log(`✅ [WORKOUT ${index + 1}] Adding ${activity.calories} calories to total`);
-        totalCalories += activity.calories;
-      } else if (activity.kilojoules) {
-        // Convert kilojoules to calories (1 kJ = 0.239 kcal)
-        const cals = Math.round(activity.kilojoules * 0.239);
-        console.log(`⚡ [WORKOUT ${index + 1}] Converting ${activity.kilojoules} kJ to ${cals} calories`);
-        totalCalories += cals;
-      } else if (activity.moving_time) {
-        // Estimate calories if no calorie data but has moving time
-        // Use 5 calories per minute as conservative estimate
-        const estimatedCals = Math.round((activity.moving_time / 60) * 5);
-        console.log(`📐 [WORKOUT ${index + 1}] Estimating ${estimatedCals} calories from ${Math.round(activity.moving_time / 60)} min of moving time`);
-        totalCalories += estimatedCals;
-      } else {
-        console.log(`⚠️ [WORKOUT ${index + 1}] No calories, kilojoules, or moving time found`);
-      }
-    });
-
-    console.log(`📊 [STRAVA DEBUG] Total calories from WORKOUTS ONLY: ${totalCalories}`);
 
     res.json({
-      activities: workouts.map(a => {
-        // Calculate calories using same logic as total calculation
-        let calories = 0;
-        if (a.calories) {
-          calories = a.calories;
-        } else if (a.kilojoules) {
-          calories = Math.round(a.kilojoules * 0.239);
-        } else if (a.moving_time) {
-          // Estimate: 5 cal/min
-          calories = Math.round((a.moving_time / 60) * 5);
-        }
-
-        return {
-          id: a.id,
-          name: a.name,
-          type: a.type,
-          distance: a.distance,
-          movingTime: a.moving_time,
-          calories: calories,
-          startDate: a.start_date
-        };
-      }),
+      activities,
       totalCalories,
-      newTokens: res.newTokens || null
+      newTokens
     });
 
   } catch (error) {
@@ -351,294 +183,252 @@ app.post("/api/strava/activities", async (req, res) => {
 });
 
 // Proxy OpenAI
-app.post("/api/chat", async (req, res) => {
+app.post("/api/chat", verifyIdToken, async (req, res) => {
   try {
-    console.log('🔵 [OPENAI] ========== API REQUEST STARTED ==========');
-    console.log('🔵 [OPENAI] Timestamp:', new Date().toISOString());
+    const userId = req.user.uid;
+    const { messages } = req.body;
+    
+    // Fetch data from Firestore via Admin SDK
+    const userDocRef = db.collection('users').doc(userId);
+    
+    const [settingsSnap, currentMacrosSnap, dailyTotalsSnap, mealHistorySnap] = await Promise.all([
+      userDocRef.collection('settings').doc('userSettings').get(),
+      userDocRef.collection('data').doc('currentMacros').get(),
+      userDocRef.collection('data').doc('dailyTotals').get(),
+      userDocRef.collection('data').doc('mealHistory').get()
+    ]);
+    
+    const settings = settingsSnap.data() || {};
+    const macroGoals = settings.macroGoals || { calories: 2000, protein: 150, carbs: 225, fat: 65 };
+    const currentMacros = currentMacrosSnap.data() || { calories: 0, protein: 0, carbs: 0, fat: 0, date: '' };
+    const dailyTotalsMap = dailyTotalsSnap.data()?.totals || {};
+    const mealHistoryList = mealHistorySnap.data()?.meals || [];
+    
+    
+    // Fetch Strava context using helper
+    const { contextString: stravaContext } = await getStravaContext(userId, db);
+    
+    const todayStr = getLocalDateString();
+    
+    // Reset daily macros if it's a new day
+    if (currentMacros.date !== todayStr) {
+      currentMacros.calories = 0;
+      currentMacros.protein = 0;
+      currentMacros.carbs = 0;
+      currentMacros.fat = 0;
+      currentMacros.date = todayStr;
+    }
 
-    const { messages, currentMacros, macroGoals } = req.body;
+    const systemPrompt = buildSystemPrompt(currentMacros, macroGoals, stravaContext, settings);
+    const tools = getChatTools();
 
-    console.log('🔵 [OPENAI] Request body received:');
-    console.log('  - Messages count:', messages?.length || 0);
-    console.log('  - Current macros:', currentMacros);
-    console.log('  - Macro goals:', macroGoals);
-
-    // Add system prompt for conversational responses
-    const systemPrompt = {
-      role: "system",
-      content: `You are a friendly nutrition coach helping someone track their meals. Be conversational and encouraging, but keep it concise (2-4 sentences max).
-
-CRITICAL FORMATTING RULE - MUST FOLLOW:
-❌ NEVER use markdown formatting (**, *, _, ~, backticks, etc.)
-❌ NEVER use asterisks, underscores, or any special symbols for emphasis
-✅ ALWAYS write in plain text only
-✅ Numbers should be plain digits: 1850 NOT **1850**
-✅ Use regular text without any formatting symbols
-
-RESPONSE STYLE:
-When users log food:
-1. Acknowledge in a natural, friendly way
-2. Estimate ONLY the meal macros for what they just logged - MUST include all 4 macros: calories, protein, carbs, fat
-3. Optional: Add a light question or comment about their day
-
-📊 MACRO DATA YOU HAVE ACCESS TO:
-You receive:
-- currentMacros: {calories, protein, carbs, fat} - what they've eaten so far today
-- macroGoals: {calories, protein, carbs, fat} - their daily targets
-
-✅ WHEN USER ASKS QUESTIONS (contains "?" or asks "how much", "how many"):
-DO answer questions about their progress:
-- "You've had X cal so far, Y remaining to hit your Z goal"
-- "You need X more grams of protein today"
-- "You have Y carbs left for the day"
-
-❌ WHEN USER LOGS NEW FOOD (no "?", just stating what they ate):
-DON'T state cumulative totals after logging:
-- "brings you to X cal for the day" ← FORBIDDEN
-- "daily total is now X cal" ← FORBIDDEN
-- "that puts you at X cal today" ← FORBIDDEN
-ONLY provide macros for the meal they just logged.
-
-The sidebar AUTOMATICALLY shows running totals. When they LOG food, only estimate that meal. When they ASK questions, calculate and answer.
-
-IMPORTANT: If the user logs MULTIPLE meals in one message:
-- Calculate macros for EACH meal separately and list them
-- DO NOT calculate or state daily totals - just the individual meal macros
-
-Example with multiple meals:
-User: "breakfast: burrito. lunch: pasta"
-GOOD: "Nice combo! Burrito: around 720 cal, 25g protein, 85g carbs, 28g fat. Pasta: about 620 cal, 18g protein, 110g carbs, 8g fat. Solid fuel!"
-BAD: "That adds up nicely. Brings you to 1850 cal, 65g protein, 230g carbs, 60g fat for the day." ← FORBIDDEN
-
-Keep it conversational but concise - 2-4 sentences max. Don't be robotic, but don't write paragraphs either.
-
-CRITICAL RULE - ALL FOUR MACROS REQUIRED:
-When a user logs food, you MUST provide ALL FOUR macros in EVERY response:
-1. Calories (cal)
-2. Protein (g)
-3. Carbs (g)
-4. Fat (g)
-
-NEVER skip any macro. NEVER say "about X cal and Y protein" without including carbs and fat.
-
-FORMAT REQUIREMENT:
-✅ CORRECT: "That's about 320 cal, 8g protein, 45g carbs, and 16g fat"
-✅ CORRECT: "That handful has about 250 cal, 8g protein, 20g carbs, 15g fat"
-❌ WRONG: "That adds 320 cal and 8g protein" (missing carbs and fat - UNACCEPTABLE!)
-❌ WRONG: "About 250 cal, 8g protein" (missing carbs and fat - UNACCEPTABLE!)
-
-If you cannot estimate a macro with confidence, provide your best estimate rather than omitting it.
-Trail mix, nuts, snacks ALL have fat - NEVER skip fat calculations.
-
-REMEMBER: Only provide macros for the specific meal logged - DO NOT calculate daily totals.
-
-EXAMPLES (ALL IN PLAIN TEXT - NO FORMATTING):
-
-Single meal:
-User: "I had scrambled eggs"
-GOOD: "Nice! That's about 400 cal, 30g protein, 5g carbs, 28g fat. What else you having today?"
-BAD (uses markdown): "Nice! That's about **400** cal, **30**g protein, **5**g carbs, **28**g fat."
-BAD (mentions daily total): "Nice! That's 400 cal, 30g protein, 5g carbs, 28g fat. Daily total: 400 cal. What else you having today?"
-BAD (too long): "Great choice! Scrambled eggs are an excellent source of protein. A typical serving contains about 400 calories, with 30g of protein from the eggs, plus healthy fats..."
-
-Another meal:
-User: "Just had a protein shake"
-GOOD: "Solid choice! That shake's around 200 cal, 60g protein, 10g carbs, 3g fat. Feeling good?"
-BAD (uses markdown): "Solid choice! That shake's around **200** cal with **60**g protein."
-BAD (mentions daily total): "Solid choice! That's 200 cal, 60g protein, 10g carbs, 3g fat. Brings you to 1700 cal for the day."
-
-Multiple meals at once:
-User: "Breakfast: french toast. Lunch: chicken pasta. Dinner: spam with rice cakes. Snack: dried mango"
-GOOD: "Got it all logged! French toast: 1290 cal, 28g protein, 180g carbs, 58g fat. Chicken pasta: 805 cal, 42g protein, 95g carbs, 28g fat. Spam with rice cakes: 620 cal, 18g protein, 78g carbs, 28g fat. Dried mango: 200 cal, 10g protein, 23g carbs, 14g fat. How was everything?"
-BAD: "Got it all logged! That's a solid 2915 cal total - 98g protein, 376g carbs, 128g fat. How was everything?"
-
-Educational question (don't track):
-User: "Is pizza healthy?"
-GOOD: "Pizza can definitely fit in a balanced diet! A typical slice is about 285 cal, 12g protein, 35g carbs, 10g fat. Just watch your portions and you're good."
-
-CALCULATION LOGIC:
-- Calculate macros ONLY for the food(s) user mentioned
-- DO NOT add to daily totals or mention cumulative totals
-- The sidebar automatically calculates and displays daily running totals
-- Be friendly and conversational, not robotic
-
-SPELLING & TYPOS:
-- Auto-correct obvious spelling mistakes and typos in food names
-- Examples: "bay carrots" → "baby carrots", "chiken" → "chicken", "protien" → "protein"
-- Use context clues to infer the correct food item
-- Don't mention the typo - just use the corrected version naturally
-
-🗑️ CRITICAL: DELETION REQUESTS - MUST INCLUDE MARKER:
-When user asks to REMOVE/DELETE a meal:
-- You MUST add [DELETE:food_name] at the very END of your response
-- This is REQUIRED - not optional
-- The marker must be the LAST thing in your response
-
-Examples (COPY THIS FORMAT EXACTLY):
-User: "remove the burger"
-Your response: "Got it, removing the burger! [DELETE:burger]"
-
-User: "delete the ice cream"
-Your response: "No problem, taking that off. [DELETE:ice cream]"
-
-User: "take off that pizza"
-Your response: "Sure thing! [DELETE:pizza]"
-
-IMPORTANT: The [DELETE:food] marker is REQUIRED for deletions to work!
-
-🔬 MACRO MATH VALIDATION (CRITICAL):
-Before stating ANY macros for a meal, you MUST verify the math:
-- Formula: (protein × 4) + (carbs × 4) + (fat × 9) = calories
-- Tolerance: ±10 calories is acceptable for rounding
-- If your math doesn't validate, recalculate until it does
-- Example validation:
-  ✅ CORRECT: 30g protein, 5g carbs, 28g fat = (30×4) + (5×4) + (28×9) = 120 + 20 + 252 = 392 cal
-  ❌ WRONG: 30g protein, 5g carbs, 28g fat = 450 cal (math doesn't work - should be 392)
-
-ESTIMATION GUIDELINES:
-- Use USDA/standard portions when size not specified (e.g., "chicken breast" = 6 oz, "eggs" = 2 large)
-- For restaurant items, use typical serving sizes (not oversized portions)
-- Round macros to whole numbers for simplicity
-- Never fabricate precision - if uncertain, give honest estimates
-- PROTEIN SOURCES - Be accurate with protein counts (users often track protein closely):
-  • Eggs (2 large): 12g protein, 1g carbs, 10g fat, 142 cal
-  • Chicken breast (6 oz cooked): 52g protein, 0g carbs, 6g fat, 248 cal
-  • Shrimp (6 oz cooked): 36g protein, 0g carbs, 2g fat, 160 cal
-  • Ground beef (6 oz, 80/20): 42g protein, 0g carbs, 32g fat, 460 cal
-  • Salmon (6 oz): 40g protein, 0g carbs, 18g fat, 330 cal
-  • Protein bar (typical): 20g protein, 25g carbs, 8g fat, 240 cal
-  • Protein shake (standard scoop): 25g protein, 3g carbs, 2g fat, 130 cal
-  • Greek yogurt (1 cup): 20g protein, 10g carbs, 5g fat, 150 cal
-- CARB SOURCES:
-  • Rice (1 cup cooked): 4g protein, 45g carbs, 0g fat, 206 cal
-  • Pasta (2 oz dry / 1 cup cooked): 7g protein, 42g carbs, 1g fat, 200 cal
-  • Bread (1 slice): 3g protein, 15g carbs, 1g fat, 80 cal
-
-DO NOT:
-❌ Write paragraphs or be overly detailed
-❌ Break down every ingredient separately (just give meal total)
-❌ Be overly enthusiastic with exclamation points everywhere
-❌ Give nutrition lectures unless asked
-❌ NEVER use markdown formatting or special symbols (**, *, _, ~, etc.)
-
-📊 CURRENT USER DATA (use this for calculations):
-Current macros consumed today:
-- Calories: ${currentMacros?.calories || 0} cal
-- Protein: ${currentMacros?.protein || 0}g
-- Carbs: ${currentMacros?.carbs || 0}g
-- Fat: ${currentMacros?.fat || 0}g
-
-Daily macro goals:
-- Calories: ${macroGoals?.calories || 2000} cal
-- Protein: ${macroGoals?.protein || 150}g
-- Carbs: ${macroGoals?.carbs || 225}g
-- Fat: ${macroGoals?.fat || 65}g
-
-When user asks questions, calculate remaining macros: (goal - current) = remaining`
-    };
-
-    console.log('📊 [DEBUG] Macro data injected into AI prompt:');
-    console.log('  Current macros:', currentMacros);
-    console.log('  Goals:', macroGoals);
-    console.log('  Prompt includes:', {
-      currentCals: currentMacros?.calories,
-      currentProtein: currentMacros?.protein,
-      currentCarbs: currentMacros?.carbs,
-      goalCals: macroGoals?.calories,
-      goalProtein: macroGoals?.protein,
-      goalCarbs: macroGoals?.carbs
-    });
-
-    // Prepend system prompt to messages if not already present
-    const messagesWithSystem = messages[0]?.role === "system"
-      ? messages
-      : [systemPrompt, ...messages];
-
-    console.log('🔵 [OPENAI] Prepared messages for API:');
-    console.log('  - Total messages (with system):', messagesWithSystem.length);
-    console.log('  - Model:', 'gpt-4o-mini');
-    console.log('  - API Key present:', !!process.env.OPENAI_API_KEY);
-    console.log('  - API Key prefix:', process.env.OPENAI_API_KEY?.substring(0, 10) + '...');
-
-    const requestBody = {
-      model: "gpt-4o-mini",
-      messages: messagesWithSystem
-    };
-
-    console.log('🔵 [OPENAI] Making fetch request to OpenAI API...');
-
-    const result = await fetch("https://api.openai.com/v1/chat/completions", {
+    const messagesWithSystem = messages[0]?.role === "system" ? messages : [systemPrompt, ...messages];
+    
+    // Call OpenAI API
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: messagesWithSystem,
+        tools: tools,
+        tool_choice: "auto"
+      }),
     });
 
-    console.log('🔵 [OPENAI] Response received:');
-    console.log('  - Status:', result.status);
-    console.log('  - Status text:', result.statusText);
-    console.log('  - OK:', result.ok);
-
-    if (!result.ok) {
-      const errorText = await result.text();
-      console.error('❌ [OPENAI] API ERROR - Request failed:');
-      console.error('  - Status:', result.status);
-      console.error('  - Status text:', result.statusText);
-      console.error('  - Error response:', errorText);
-
-      // Try to parse error as JSON for better details
-      try {
-        const errorJson = JSON.parse(errorText);
-        console.error('  - Parsed error:', JSON.stringify(errorJson, null, 2));
-      } catch (e) {
-        console.error('  - Raw error text:', errorText);
-      }
-
-      return res.status(500).json({
-        error: `OpenAI API Error (${result.status}): ${errorText}`
-      });
+    if (!response.ok) {
+      throw new Error(`OpenAI API Error (${response.status}): ${await response.text()}`);
     }
 
-    const data = await result.json();
-    console.log('🔵 [OPENAI] Parsing response data...');
-    console.log('  - Choices available:', data.choices?.length || 0);
-    console.log('  - Usage:', data.usage);
+    const data = await response.json();
+    const message = data.choices[0].message;
+    
+    let finalReply = message.content || "";
+    let newlyLoggedMeals = [];
+    let updatedTotals = currentMacros;
+    let suggestedMeal = null;
 
-    if (!data.choices || data.choices.length === 0) {
-      console.error('❌ [OPENAI] No choices in response!');
-      console.error('  - Full response:', JSON.stringify(data, null, 2));
-      return res.status(500).json({
-        error: 'OpenAI returned no response choices'
-      });
+    if (message.tool_calls) {
+      const result = await processToolCalls(message.tool_calls, currentMacros, dailyTotalsMap, mealHistoryList);
+      finalReply = result.finalReply || finalReply;
+      newlyLoggedMeals = result.newlyLoggedMeals;
+      updatedTotals = result.updatedTotals;
+      suggestedMeal = result.suggestedMeal || null;
+      
+      const batch = db.batch();
+      batch.set(userDocRef.collection('data').doc('currentMacros'), { ...updatedTotals, updatedAt: new Date().toISOString() });
+      batch.set(userDocRef.collection('data').doc('dailyTotals'), { totals: dailyTotalsMap, updatedAt: new Date().toISOString() });
+      batch.set(userDocRef.collection('data').doc('mealHistory'), { meals: mealHistoryList, updatedAt: new Date().toISOString() });
+      await batch.commit();
     }
 
-    const aiMessage = data.choices[0].message.content;
-    console.log('✅ [OPENAI] Success! AI response received');
-    console.log('  - Response length:', aiMessage.length, 'characters');
-    console.log('  - Response preview:', aiMessage.substring(0, 100) + '...');
-    console.log('🔵 [OPENAI] ========== API REQUEST COMPLETED ==========');
-
-    // For now, return plain text response
-    // TODO: Add JSON parsing later once basic functionality works
     res.json({
-      reply: aiMessage,
-      macros: null // Will implement structured parsing later
+      reply: finalReply,
+      totals: updatedTotals,
+      meals: newlyLoggedMeals,
+      suggestedMeal
     });
-  } catch (err) {
-    console.error('❌ [OPENAI] ========== EXCEPTION CAUGHT ==========');
-    console.error('❌ [OPENAI] Error type:', err.name);
-    console.error('❌ [OPENAI] Error message:', err.message);
-    console.error('❌ [OPENAI] Error stack:', err.stack);
-    console.error('❌ [OPENAI] Full error object:', err);
-    console.error('❌ [OPENAI] ========================================');
 
+  } catch (err) {
+    console.error('❌ [OPENAI] Error:', err);
     res.status(500).json({
-      error: `Server error: ${err.message}`,
-      errorType: err.name,
-      timestamp: new Date().toISOString()
+      error: `Server error: ${err.message}`
     });
+  }
+});
+
+// Rate proactive message
+app.post("/api/rate-message", verifyIdToken, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const { messageId, thumbs } = req.body;
+    
+    const userDocRef = db.collection('users').doc(userId);
+    const messagesSnap = await userDocRef.collection('data').doc('messages').get();
+    
+    if (messagesSnap.exists) {
+      let data = messagesSnap.data();
+      let messages = data.messages || [];
+      const msgIndex = messages.findIndex(m => m.id === messageId);
+      
+      if (msgIndex !== -1) {
+        messages[msgIndex].thumbs = thumbs;
+        await userDocRef.collection('data').doc('messages').set({ messages }, { merge: true });
+        
+        // Also log to a separate collection for easy querying
+        await db.collection('proactiveLogs').add({
+          userId,
+          messageId,
+          thumbs,
+          timestamp: new Date().toISOString()
+        });
+        
+        return res.json({ success: true });
+      }
+    }
+    res.status(404).json({ error: "Message not found" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Strava Webhook Challenge
+app.get("/api/strava/webhook", (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode && token) {
+    const expectedToken = process.env.STRAVA_WEBHOOK_VERIFY_TOKEN || 'eattailor_strava_webhook_token';
+    if (mode === 'subscribe' && token === expectedToken) {
+      console.log('WEBHOOK_VERIFIED');
+      res.json({ "hub.challenge": challenge });
+    } else {
+      res.sendStatus(403);
+    }
+  } else {
+    res.sendStatus(400);
+  }
+});
+
+// Strava Webhook Event
+app.post("/api/strava/webhook", async (req, res) => {
+  // Strava requires 200 OK within 2 seconds
+  res.status(200).send("EVENT_RECEIVED");
+  
+  const event = req.body;
+  console.log('🚴 [WEBHOOK] Event received:', JSON.stringify(event));
+
+  // We only care about new activities being created
+  if (event.object_type !== 'activity' || event.aspect_type !== 'create') {
+    return;
+  }
+
+  const athleteId = event.owner_id;
+  
+  try {
+    // Find user by athleteId
+    const usersSnap = await db.collection('users').get();
+    let targetUserId = null;
+    let targetAuth = null;
+    
+    for (const userDoc of usersSnap.docs) {
+      const authSnap = await db.collection('users').doc(userDoc.id).collection('data').doc('stravaAuth').get();
+      if (authSnap.exists) {
+        const authData = authSnap.data();
+        if (authData.athlete && authData.athlete.id === athleteId) {
+          targetUserId = userDoc.id;
+          targetAuth = authData;
+          break;
+        }
+      }
+    }
+    
+    if (!targetUserId) {
+      console.log('🚴 [WEBHOOK] No user found for athlete:', athleteId);
+      return;
+    }
+
+    const userDocRef = db.collection('users').doc(targetUserId);
+    const settingsSnap = await userDocRef.collection('settings').doc('userSettings').get();
+    const settings = settingsSnap.exists ? settingsSnap.data() : {};
+    
+    if (settings.proactiveMessages === false) {
+      console.log('🚴 [WEBHOOK] Proactive messages disabled for user:', targetUserId);
+      return;
+    }
+
+    // Process the new activity context (which triggers a fresh fetch of activities)
+    const { contextString } = await getStravaContext(targetUserId, db);
+    
+    // Fetch current state
+    const currentMacrosSnap = await userDocRef.collection('data').doc('currentMacros').get();
+    const currentMacros = currentMacrosSnap.exists ? currentMacrosSnap.data() : { calories: 0, protein: 0, carbs: 0, fat: 0, date: getLocalDateString() };
+    const macroGoals = settings.macroGoals || { calories: 2000, protein: 150, carbs: 225, fat: 65 };
+
+    const prompt = buildSystemPrompt(currentMacros, macroGoals, contextString, settings);
+    const messages = [
+      prompt,
+      { role: "user", content: "I just finished a workout! Generate a short, encouraging proactive nudge (1-2 sentences) about my updated calorie targets and what I should eat next to recover." }
+    ];
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_BRIEF_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini",
+        messages: messages,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const aiMessage = data.choices[0].message.content;
+
+      // Save nudge to chat history
+      const msgSnap = await userDocRef.collection('data').doc('messages').get();
+      let history = msgSnap.exists ? msgSnap.data().messages || [] : [];
+      
+      history.push({
+        id: 'nudge_' + Date.now(),
+        role: "assistant",
+        text: aiMessage,
+        time: Date.now(),
+        isProactive: true,
+        type: 'webhook_nudge'
+      });
+      
+      await userDocRef.collection('data').doc('messages').set({ messages: history }, { merge: true });
+      console.log('🚴 [WEBHOOK] Nudge generated and saved for user:', targetUserId);
+    }
+  } catch (err) {
+    console.error('🚴 [WEBHOOK] Error processing event:', err);
   }
 });
 
@@ -663,12 +453,12 @@ app.listen(process.env.PORT || 8080, () => {
   // Validate environment variables on startup
   console.log('\n🔍 [STARTUP] Environment variable check:');
   console.log('  - OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? `✅ Set (${process.env.OPENAI_API_KEY.substring(0, 10)}...)` : '❌ NOT SET');
+  console.log('  - OPENAI_MODEL:', process.env.OPENAI_MODEL ? `✅ Set (${process.env.OPENAI_MODEL})` : '❌ NOT SET (using default)');
   console.log('  - STRAVA_CLIENT_ID:', process.env.STRAVA_CLIENT_ID ? '✅ Set' : '❌ NOT SET');
   console.log('  - STRAVA_CLIENT_SECRET:', process.env.STRAVA_CLIENT_SECRET ? '✅ Set' : '❌ NOT SET');
   console.log('  - PORT:', process.env.PORT || '8080 (default)');
 
   if (!process.env.OPENAI_API_KEY) {
-    console.error('\n⚠️  WARNING: OPENAI_API_KEY is not set! AI chat will not work.');
-    console.error('⚠️  Please set OPENAI_API_KEY in your environment variables or .env file\n');
+    console.error('\n⚠️  WARNING: No OPENAI_API_KEY is set! AI chat will not work.');
   }
 });

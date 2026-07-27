@@ -1,3 +1,8 @@
 node_modules/
 .env
 .DS_Store
+service-account.json
+service-account.json
+test-*.js
+e2e-test.js
+.SETTLED*

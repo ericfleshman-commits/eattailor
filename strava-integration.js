@@ -218,11 +218,24 @@ export async function fetchStravaActivities(db, userId) {
 
     debugLog('❌ No cache found, fetching from server...');
 
+    // Get Firebase ID token for auth
+    let idToken = "";
+    if (window.currentUser) {
+      try {
+        idToken = await window.currentUser.getIdToken();
+      } catch (e) {
+        debugLog("Failed to get ID token", e);
+      }
+    }
+
     // Fetch from server
     debugLog('📡 Calling /api/strava/activities...');
     const response = await fetch('/api/strava/activities', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`
+      },
       body: JSON.stringify({
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,

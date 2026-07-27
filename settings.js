@@ -272,6 +272,7 @@ async function loadSettings(db, currentUser) {
     document.getElementById('macroCarbs').value = settings.macroGoals?.carbs || 225;
     document.getElementById('macroFat').value = settings.macroGoals?.fat || 65;
     document.getElementById('adjustForActivity').checked = settings.macroGoals?.adjustForActivity !== false; // Default to true
+    document.getElementById('proactiveMessages').checked = settings.proactiveMessages !== false; // Default to true
 
     // Populate AI preferences
     const aiPrefs = settings.aiPreferences?.dietaryInfo || '';
@@ -394,6 +395,7 @@ async function saveSettings(db, currentUser) {
         fat: parseInt(document.getElementById('macroFat').value) || 65,
         adjustForActivity: document.getElementById('adjustForActivity').checked
       },
+      proactiveMessages: document.getElementById('proactiveMessages').checked,
       aiPreferences: {
         dietaryInfo: document.getElementById('aiPreferences').value.trim()
       }
