@@ -1,3 +1,0 @@
-This is a test file to verify auto-commit functionality.
-Created at: 2025-01-15
-Purpose: Testing if file changes trigger automatic git commits.
